@@ -314,10 +314,11 @@ public:
         int popupWidth = 200;
         
         setWhiteColor();
-        lcd()->drawRBox((W / 2) - (popupWidth / 2), (H / 2) - (popupHigh / 2), popupWidth, popupHigh, 8);
+        lcd()->drawRBox((W / 2) - (popupWidth / 2) - 2, (H / 2) - (popupHigh / 2) - 2, popupWidth + 4, popupHigh + 4, 8);
 
         setBlackColor();
         lcd()->drawRFrame((W / 2) - (popupWidth / 2), (H / 2) - (popupHigh / 2), popupWidth, popupHigh, 8);
+        lcd()->drawRFrame((W / 2) - (popupWidth / 2) + 2, (H / 2) - (popupHigh / 2) + 2, popupWidth - 4, popupHigh - 4, 8);
 
         setFont(Font::FONT_B20_TF);
         drawString(TextAlign::CENTER, (W / 2) - (popupWidth / 2), (W / 2) - (popupWidth / 2) + popupWidth, (H / 2) - (popupHigh / 2) + (popupHigh / 2) + 4, true, false, false, "Loading SSB ...");
@@ -329,10 +330,11 @@ public:
         int popupWidth = 250;
 
         setWhiteColor();
-        lcd()->drawRBox((W / 2) - (popupWidth / 2), (H / 2) - (popupHigh / 2), popupWidth, popupHigh, 8);
+        lcd()->drawRBox((W / 2) - (popupWidth / 2) - 2, (H / 2) - (popupHigh / 2) - 2, popupWidth + 4, popupHigh + 4, 8);
 
         setBlackColor();
         lcd()->drawRFrame((W / 2) - (popupWidth / 2), (H / 2) - (popupHigh / 2), popupWidth, popupHigh, 8);
+        lcd()->drawRFrame((W / 2) - (popupWidth / 2) + 2, (H / 2) - (popupHigh / 2) + 2, popupWidth - 4, popupHigh - 4, 8);
 
         setBlackColor();
         //setFont(Font::FONT_B32_TF);
