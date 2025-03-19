@@ -4,18 +4,20 @@ SI4732 Radio is a custom firmware project designed to power my home-built radio 
 
 Based on [G8PTN's ATS_MINI](https://github.com/G8PTN/ATS_MINI).
 
+<iframe width="560" height="315" src="https://www.youtube.com/embed/iMb66FNOmYM" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
 ## Overview
 
 It harnesses the capabilities of the SI4732 module to deliver high-quality FM radio performance, while the innovative design optimizes simple hardware into a complete and versatile receiver platform.
 
 ## Build
 
-<img src="img/img_1.jpg" alt="Radio" width="400" />
-<img src="img/img_2.jpg" alt="Radio" width="400" />
-<img src="img/img_3.jpg" alt="Radio" width="400" />
-<img src="img/img_4.jpg" alt="Radio" width="400" />
-<img src="img/img_5.jpg" alt="Radio" width="400" />
-<img src="img/img_6.jpg" alt="Radio" width="400" />
+<img src="img/img_1.jpg" alt="Radio" width="560" />
+<img src="img/img_2.jpg" alt="Radio" width="560" />
+<img src="img/img_3.jpg" alt="Radio" width="560" />
+<img src="img/img_4.jpg" alt="Radio" width="560" />
+<img src="img/img_5.jpg" alt="Radio" width="560" />
+<img src="img/img_6.jpg" alt="Radio" width="560" />
 
 ## Hardware Components
 
