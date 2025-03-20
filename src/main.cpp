@@ -46,6 +46,9 @@ const int eeprom_ver_address = 496;   //               EEPROM version base adddr
 long storeTime = millis();
 bool itIsTimeToSave = false;
 
+bool infoShow = false;
+char infoMessage[40];
+
 bool bfoOn = false;
 bool ssbLoaded = false;
 
@@ -329,6 +332,7 @@ void useBand();
 void loadSSB();
 void doAvc(int16_t v);
 void selectMenuList(int8_t v);
+uint8_t getStrength();
 
 
 /* ---------------------------------------- */
@@ -543,6 +547,14 @@ void resetEepromDelay()
 	itIsTimeToSave = true;
 }
 
+void showInfoMsg(const char* msg) {
+	strncpy(infoMessage, msg, sizeof(infoMessage) - 1);
+	infoMessage[sizeof(infoMessage) - 1] = '\0'; // Ensure null termination
+	infoShow = true;
+	elapsedCommand = millis();
+}
+
+
 /**
 	Set all command flags to false
 	When all flags are disabled (false), the encoder controls the frequency
@@ -608,7 +620,7 @@ void drawMainVFO() {
 	}
 
 	// RSSI
-	ui.drawRSSI(band[bandIdx].bandType, rssi, 40, 120);
+	ui.drawRSSI(rssi, getStrength(), 40, 120);
 
 	ui.setBlackColor();
 	ui.lcd()->drawBox(0, 160, 400, 80);
@@ -1212,100 +1224,6 @@ void selectMenuList(int8_t v) {
 }
 
 /**
- * Starts the MENU action process
- */
-void doCurrentMenuCmd() {
-	disableCommands();
-	switch (currentMenuCmd) {
-	case VOLUME:                   // VOLUME
-		if (muted) {
-			rx.setVolume(mute_vol_val);
-			muted = false;
-		}
-		cmdVolume = true;
-		break;
-	case STEP:                      // STEP
-		cmdStep = true;
-		if (currentMode == FM) {
-			ui.setMenu(currentStepIdx, FmStepStr, 4);
-		}
-		else if (isSSB()) {
-			ui.setMenu(currentStepIdx, AmSsbStepStr, 8);
-		}
-		else {
-			ui.setMenu(currentStepIdx, AmStepStr, 7);
-		}
-		break;
-	case MODE:                      // MODE
-		cmdMode = true;
-		ui.setMenu(currentMode, modeStr, 5);
-		break;
-	case BW:                        // BW
-		cmdBandwidth = true;
-		if (currentMode == FM) {
-			ui.setMenu(bwIdxFM, bandwidthFMStr, 5);
-		}
-		else if (isSSB()) {
-			ui.setMenu(bwIdxSSB, bandwidthSSBStr, 6);
-		}
-		else {
-			ui.setMenu(bwIdxAM, bandwidthAMStr, 7);
-		}
-		break;
-	case AGC_ATT:                   // AGC/ATT
-		cmdAgc = true;
-		break;
-	case SOFTMUTE:                  // SOFTMUTE
-		if (currentMode != FM) {
-			cmdSoftMuteMaxAtt = true;
-		}
-		break;
-	case SEEKUP:                    // SEEKUP
-		seekStop = false;             // G8PTN: Flag is set by rotary encoder and cleared on seek entry
-		seekDirection = 1;
-		doSeek();
-		break;
-	case SEEKDOWN:                  // SEEKDOWN
-		seekStop = false;             // G8PTN: Flag is set by rotary encoder and cleared on seek entry
-		seekDirection = 0;
-		doSeek();
-		break;
-	case BAND:                      // BAND
-		cmdBand = true;
-		ui.setMenu(bandIdx, bandStr, 8);
-		break;
-	case MUTE:                      // MUTE
-		muted = !muted;
-		if (muted)
-		{
-			mute_vol_val = rx.getVolume();
-			rx.setVolume(0);
-		}
-		else rx.setVolume(mute_vol_val);
-		break;
-
-		// G8PTN: Added
-	case CALIBRATION:               // CALIBRATION
-		if (isSSB()) {
-			cmdCal = true;
-			currentCAL = band[bandIdx].bandCAL;
-		}
-		break;
-		// G8PTN: Added
-	case AVC:                       // AVC
-		if (currentMode != FM) {
-			cmdAvc = true;
-		}
-		break;
-
-	default:
-		break;
-	}
-	currentMenuCmd = -1;
-	elapsedCommand = millis();
-}
-
-/**
  * Return true if the current status is Menu command
  */
 bool isMenuMode() {
@@ -1628,6 +1546,108 @@ void setup() {
 
 }
 
+// -----------------------------------------------------------------------------------
+
+/**
+ * Starts the MENU action process
+ */
+void doCurrentMenuCmd() {
+	disableCommands();
+	switch (currentMenuCmd) {
+	case VOLUME:                   // VOLUME
+		if (muted) {
+			rx.setVolume(mute_vol_val);
+			muted = false;
+		}
+		cmdVolume = true;
+		break;
+	case STEP:                      // STEP
+		cmdStep = true;
+		if (currentMode == FM) {
+			ui.setMenu(currentStepIdx, FmStepStr, 4);
+		}
+		else if (isSSB()) {
+			ui.setMenu(currentStepIdx, AmSsbStepStr, 8);
+		}
+		else {
+			ui.setMenu(currentStepIdx, AmStepStr, 7);
+		}
+		break;
+	case MODE:                      // MODE
+		cmdMode = true;
+		ui.setMenu(currentMode, modeStr, 5);
+		break;
+	case BW:                        // BW
+		cmdBandwidth = true;
+		if (currentMode == FM) {
+			ui.setMenu(bwIdxFM, bandwidthFMStr, 5);
+		}
+		else if (isSSB()) {
+			ui.setMenu(bwIdxSSB, bandwidthSSBStr, 6);
+		}
+		else {
+			ui.setMenu(bwIdxAM, bandwidthAMStr, 7);
+		}
+		break;
+	case AGC_ATT:                   // AGC/ATT
+		cmdAgc = true;
+		break;
+	case SOFTMUTE:                  // SOFTMUTE
+		if (currentMode != FM) {
+			cmdSoftMuteMaxAtt = true;
+		} else {
+			showInfoMsg("Not available in FM mode !");
+		}
+		break;
+	case SEEKUP:                    // SEEKUP
+		seekStop = false;             // G8PTN: Flag is set by rotary encoder and cleared on seek entry
+		seekDirection = 1;
+		doSeek();
+		break;
+	case SEEKDOWN:                  // SEEKDOWN
+		seekStop = false;             // G8PTN: Flag is set by rotary encoder and cleared on seek entry
+		seekDirection = 0;
+		doSeek();
+		break;
+	case BAND:                      // BAND
+		cmdBand = true;
+		ui.setMenu(bandIdx, bandStr, 8);
+		break;
+	case MUTE:                      // MUTE
+		muted = !muted;
+		if (muted)
+		{
+			mute_vol_val = rx.getVolume();
+			rx.setVolume(0);
+		}
+		else rx.setVolume(mute_vol_val);
+		break;
+
+		// G8PTN: Added
+	case CALIBRATION:               // CALIBRATION
+		if (isSSB()) {
+			cmdCal = true;
+			currentCAL = band[bandIdx].bandCAL;
+		} else {
+			showInfoMsg("Only available in SSB mode !");
+		}
+		break;
+		// G8PTN: Added
+	case AVC:                       // AVC
+		if (currentMode != FM) {
+			cmdAvc = true;
+		} else {
+			showInfoMsg("Not available in FM mode !");
+		}
+		break;
+
+	default:
+		break;
+	}
+	currentMenuCmd = -1;
+	elapsedCommand = millis();
+}
+
 void doEncoderAction() {
 	// G8PTN: The manual BFO adjusment is not required with the doFrequencyTuneSSB method, but leave for debug
 	if (bfoOn & isSSB())
@@ -1824,11 +1844,12 @@ void loop() {
 
 	if (encoder.encoderChanged()) {
 		encoderCount = encoder.getEncoderValue();
-		encoder.setEncoderValue(0);
+		encoder.setEncoderValue(0);		
 	}
 
 	if (encoderCount != 0)
 	{
+		infoShow = false;
 		doEncoderAction();
 	}
 	else
@@ -1837,6 +1858,7 @@ void loop() {
 		//if (digitalRead(ENCODER_PUSH_BUTTON) == LOW)
 		if (pushButton.pushed())
 		{
+			infoShow = false;
 			doButtonAction();
 		}
 	}
@@ -1868,6 +1890,10 @@ void loop() {
 		else if (isMenuMode()) {
 			disableCommands();
 		}
+		if (infoShow) {
+			infoShow = false;		
+		}
+
 		elapsedCommand = millis();
 	}
 
@@ -1900,6 +1926,9 @@ void loop() {
 		showStatus();
 		drawMainVFO();
 		drawMenu();
+		if (infoShow) {
+			ui.showStatusScreen("", infoMessage);
+		}
 		ui.updateDisplay();
 	}
 

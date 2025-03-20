@@ -309,39 +309,33 @@ public:
 
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
-    void drawLoading() {
-        int popupHigh = 80;
-        int popupWidth = 200;
-        
-        setWhiteColor();
-        lcd()->drawRBox((W / 2) - (popupWidth / 2) - 2, (H / 2) - (popupHigh / 2) - 2, popupWidth + 4, popupHigh + 4, 8);
-
-        setBlackColor();
-        lcd()->drawRFrame((W / 2) - (popupWidth / 2), (H / 2) - (popupHigh / 2), popupWidth, popupHigh, 8);
-        lcd()->drawRFrame((W / 2) - (popupWidth / 2) + 2, (H / 2) - (popupHigh / 2) + 2, popupWidth - 4, popupHigh - 4, 8);
-
-        setFont(Font::FONT_B20_TF);
-        drawString(TextAlign::CENTER, (W / 2) - (popupWidth / 2), (W / 2) - (popupWidth / 2) + popupWidth, (H / 2) - (popupHigh / 2) + (popupHigh / 2) + 4, true, false, false, "Loading SSB ...");
-    }
-
-
     void showStatusScreen(const char* title, const char* message ) {
         int popupHigh = 80;
-        int popupWidth = 250;
+
+        setFont(Font::FONT_B20_TF);
+
+        u8g2_uint_t string_length = lcd()->getStrWidth(message);
+
+        int popupWidth = 20 + string_length;
 
         setWhiteColor();
-        lcd()->drawRBox((W / 2) - (popupWidth / 2) - 2, (H / 2) - (popupHigh / 2) - 2, popupWidth + 4, popupHigh + 4, 8);
+        lcd()->drawRBox((W / 2) - (popupWidth / 2) - 3, (H / 2) - (popupHigh / 2) - 3, popupWidth + 6, popupHigh + 6, 8);
 
         setBlackColor();
         lcd()->drawRFrame((W / 2) - (popupWidth / 2), (H / 2) - (popupHigh / 2), popupWidth, popupHigh, 8);
+        lcd()->drawRFrame((W / 2) - (popupWidth / 2) - 1, (H / 2) - (popupHigh / 2) - 1, popupWidth + 2, popupHigh + 2, 8);
         lcd()->drawRFrame((W / 2) - (popupWidth / 2) + 2, (H / 2) - (popupHigh / 2) + 2, popupWidth - 4, popupHigh - 4, 8);
 
         setBlackColor();
         //setFont(Font::FONT_B32_TF);
         //drawString(TextAlign::CENTER, 10, 390, 110, true, false, false, title);
-        setFont(Font::FONT_B20_TF);
+        
         drawString(TextAlign::CENTER, (W / 2) - (popupWidth / 2), (W / 2) - (popupWidth / 2) + popupWidth, (H / 2) - (popupHigh / 2) + (popupHigh / 2) + 4, true, false, false, message);
         
+    }
+
+    void drawLoading() {
+        showStatusScreen("", "Loading SSB ...");
     }
 
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -416,50 +410,7 @@ public:
         return (delta * rise) / run + out_min;
     }
 
-    uint8_t getStrength(uint8_t currentMode, uint8_t rssi) {
-        if (currentMode != FM_BAND_TYPE) {
-            //dBuV to S point conversion HF
-            if ((rssi >= 0) and (rssi <= 1)) return  1;  // S0
-            if ((rssi > 1) and (rssi <= 1)) return  2;  // S1
-            if ((rssi > 2) and (rssi <= 3)) return  3;  // S2
-            if ((rssi > 3) and (rssi <= 4)) return  4;  // S3
-            if ((rssi > 4) and (rssi <= 10)) return  5;  // S4
-            if ((rssi > 10) and (rssi <= 16)) return  6;  // S5
-            if ((rssi > 16) and (rssi <= 22)) return  7;  // S6
-            if ((rssi > 22) and (rssi <= 28)) return  8;  // S7
-            if ((rssi > 28) and (rssi <= 34)) return  9;  // S8
-            if ((rssi > 34) and (rssi <= 44)) return 10;  // S9
-            if ((rssi > 44) and (rssi <= 54)) return 11;  // S9 +10
-            if ((rssi > 54) and (rssi <= 64)) return 12;  // S9 +20
-            if ((rssi > 64) and (rssi <= 74)) return 13;  // S9 +30
-            if ((rssi > 74) and (rssi <= 84)) return 14;  // S9 +40
-            if ((rssi > 84) and (rssi <= 94)) return 15;  // S9 +50
-            if (rssi > 94)                   return 16;  // S9 +60
-            //if (rssi > 95)                   return 17;  //>S9 +60
-        }
-        else
-        {
-            //dBuV to S point conversion FM
-            if (rssi < 1)                   return  1;
-            if ((rssi > 1) and (rssi <= 2)) return  7;  // S6
-            if ((rssi > 2) and (rssi <= 8)) return  8;  // S7
-            if ((rssi > 8) and (rssi <= 14)) return  9;  // S8
-            if ((rssi > 14) and (rssi <= 24)) return 10;  // S9
-            if ((rssi > 24) and (rssi <= 34)) return 11;  // S9 +10
-            if ((rssi > 34) and (rssi <= 44)) return 12;  // S9 +20
-            if ((rssi > 44) and (rssi <= 54)) return 13;  // S9 +30
-            if ((rssi > 54) and (rssi <= 64)) return 14;  // S9 +40
-            if ((rssi > 64) and (rssi <= 74)) return 15;  // S9 +50
-            if (rssi > 74)                   return 16;  // S9 +60
-            //if (rssi > 76)                   return 17;  //>S9 +60
-            // newStereoPilot=si4735.getCurrentPilot();
-        }
-        return 0;
-    }
-
-    void drawRSSI(uint8_t currentMode, int rssi, u8g2_uint_t x, u8g2_uint_t y) {
-
-        uint8_t vu = getStrength(currentMode, rssi);
+    void drawRSSI(int rssi, int vu, u8g2_uint_t x, u8g2_uint_t y) {
 
         setBlackColor();
         setFont(Font::FONT_32_TF);
