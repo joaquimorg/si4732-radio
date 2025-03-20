@@ -31,6 +31,8 @@
 
 #define AUDIO_MUTE 36
 
+#define AUDIO_INPUT 3
+
 void hal_extcom_start();
 
 const char* getStrValue(const char* str, uint8_t index);

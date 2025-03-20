@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <arduinoFFT.h>
 #include <Wire.h>
 #include "EEPROM.h"
 #include <SI4735.h>
@@ -20,11 +21,9 @@ SI4735 rx;
 #define ELAPSED_COMMAND      10000  // time to turn off the last command controlled by encoder. Time to goes back to the VFO control // G8PTN: Increased time and corrected comment
 #define ELAPSED_CLICK         1500  // time to check the double click commands
 #define DEFAULT_VOLUME          35  // change it for your favorite sound volume
-#define STRENGTH_CHECK_TIME   1500  // Not used
 #define RDS_CHECK_TIME         250  // Increased from 90
 
 #define BACKGROUND_REFRESH_TIME 100    // Background screen refresh time. Covers the situation where there are no other events causing a refresh
-#define TUNE_HOLDOFF_TIME         90    // Timer to hold off display whilst tuning
 
 // SI4732/5 patch
 const uint16_t size_content = sizeof ssb_patch_content; // see patch_init.h
@@ -123,14 +122,7 @@ uint32_t background_timer = millis();   // Background screen refresh timer.
 uint32_t tuning_timer = millis();       // Tuning hold off timer.
 bool tuning_flag = false;               // Flag to indicate tuning
 
-// Time
-uint32_t clock_timer = 0;
-uint8_t time_seconds = 0;
-uint8_t time_minutes = 0;
-uint8_t time_hours = 0;
-char time_disp[16];
-
-
+// Bandwidth data structure
 typedef struct
 {
 	uint8_t idx;      // SI473X device bandwidth index
@@ -324,7 +316,51 @@ const char* MenuStr = "Volume\nBand\nMode\nStep\nBandwidth\nMute\nAGC/ATTN\nSoft
 int8_t currentMenuCmd = -1;
 int8_t menuIdx = VOLUME;
 
+
 /* ---------------------------------------- */
+#define SAMPLES         512          // Must be a power of 2
+#define SAMPLING_FREQ   60000         // Hz, must be 40000 or less due to ADC conversion time. Determines maximum frequency that can be analysed by the FFT Fmax=sampleF/2.
+#define AMPLITUDE       100          // Depending on your audio source level, you may need to alter this value. Can be used as a 'sensitivity' control.
+#define NOISE           1000           // Used as a crude noise filter, values below this are ignored
+#define NUM_BANDS       16            // To change this, you will need to change the bunch of if statements describing the mapping from bins to bands
+
+// Sampling and FFT stuff
+unsigned int sampling_period_us;
+int bandValues[] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+int peak[] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+int oldBarHeights[] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+double vReal[SAMPLES];
+double vImag[SAMPLES];
+unsigned long newTime;
+ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, SAMPLES, SAMPLING_FREQ);
+
+hw_timer_t* timerFFT = NULL;
+
+/**
+ * brief	HAL functions to toggle EXTCOMIN pin
+ */
+void IRAM_ATTR hal_fft(void) {
+
+	// Sample the audio pin
+	for (int i = 0; i < SAMPLES; i++) {
+		//newTime = micros();
+		vReal[i] = analogRead(AUDIO_INPUT); // A conversion takes about 9.7uS on an ESP32
+		vImag[i] = 0;
+		//while ((micros() - newTime) < sampling_period_us) { /* chill */ }
+	}
+
+}
+
+void hal_fft_start() {
+
+	timerFFT = timerBegin(10000);
+	timerAttachInterrupt(timerFFT, &hal_fft);
+	timerAlarm(timerFFT, 10000, true, 0);
+}
+
+/* ---------------------------------------- */
+
+
 void doSoftMute(int8_t v);
 void doAgc(int8_t v);
 void updateBFO();
@@ -584,7 +620,7 @@ void drawMainVFO() {
 	ui.draw_ic_mode(320, 70, BLACK);
 
 	ui.setFont(Font::FONT_B20_TF);
-	ui.drawString(TextAlign::CENTER, 318, 368, 94, false, false, false, getStr(modeStr,currentMode));
+	ui.drawString(TextAlign::CENTER, 318, 368, 94, false, false, false, getStr(modeStr, currentMode));
 
 	ui.setFont(Font::FONT_20_TF);
 
@@ -633,16 +669,16 @@ void drawMainVFO() {
 		if (stationName != nullptr) {
 			//ui.setBlackColor();
 			ui.setFont(Font::FONT_B20_TF);
-			ui.drawStringf(TextAlign::CENTER, 10, 390, 180, false, false, false, "%s", stationName);
+			ui.drawStringf(TextAlign::CENTER, 10, 300, 180, false, false, false, "%s", stationName);
 			if (rdsMsg != nullptr) {
 				ui.setFont(Font::FONT_20_TF);
-				ui.draw_string_multi_line(rdsMsg, 40, 10, 210);
+				ui.draw_string_multi_line(rdsMsg, 27, 5, 200);
 			}
 		}
 
-		if (rdsTime != nullptr) {
+		/*if (rdsTime != nullptr) {
 			ui.drawStrf(10, 180, rdsTime);
-		}
+		}*/
 	}
 	else {
 		ui.setFont(Font::FONT_B20_TF);
@@ -681,7 +717,7 @@ void showMenuScreen(const char* name, uint8_t h) {
 	ui.setWhiteColor();
 	ui.lcd()->drawRBox(posX - 3, posY - 3, mW + 6, h + 6, 8);
 
-	ui.setBlackColor();	
+	ui.setBlackColor();
 	ui.lcd()->drawRBox(posX, 28, mW, 24, 8);
 
 	ui.setWhiteColor();
@@ -715,7 +751,7 @@ void setBand(int8_t up_down)
 	currentMode = band[bandIdx].bandMODE;
 
 	ui.setListPos(bandIdx);
-	
+
 	if (isSSB())
 	{
 		if (ssbLoaded == false)
@@ -735,7 +771,7 @@ void setBand(int8_t up_down)
 
 	useBand();
 	delay(MIN_ELAPSED_TIME); // waits a little more for releasing the button.
-	elapsedCommand = millis();	
+	elapsedCommand = millis();
 }
 
 
@@ -1449,30 +1485,6 @@ void doAvc(int16_t v) {
 	}
 }
 
-void clock_time()
-{
-	if ((micros() - clock_timer) >= 1000000) {
-		clock_timer = micros();
-		time_seconds++;
-		if (time_seconds >= 60) {
-			time_seconds = 0;
-			time_minutes++;
-
-			if (time_minutes >= 60) {
-				time_minutes = 0;
-				time_hours++;
-
-				if (time_hours >= 24) {
-					time_hours = 0;
-				}
-			}
-		}
-
-		// Format for display HH:MM (24 hour format)
-		sprintf(time_disp, "%2.2d:%2.2d", time_hours, time_minutes);
-	}
-}
-
 // -----------------------------------------------------------------------------------
 
 void setup() {
@@ -1544,6 +1556,9 @@ void setup() {
 	// Uses values from EEPROM (Last stored or defaults after EEPROM reset) 
 	useBand();
 
+	sampling_period_us = round(1000000 * (1.0 / SAMPLING_FREQ));
+	//hal_fft_start();
+
 }
 
 // -----------------------------------------------------------------------------------
@@ -1595,7 +1610,8 @@ void doCurrentMenuCmd() {
 	case SOFTMUTE:                  // SOFTMUTE
 		if (currentMode != FM) {
 			cmdSoftMuteMaxAtt = true;
-		} else {
+		}
+		else {
 			showInfoMsg("Not available in FM mode !");
 		}
 		break;
@@ -1628,7 +1644,8 @@ void doCurrentMenuCmd() {
 		if (isSSB()) {
 			cmdCal = true;
 			currentCAL = band[bandIdx].bandCAL;
-		} else {
+		}
+		else {
 			showInfoMsg("Only available in SSB mode !");
 		}
 		break;
@@ -1636,7 +1653,8 @@ void doCurrentMenuCmd() {
 	case AVC:                       // AVC
 		if (currentMode != FM) {
 			cmdAvc = true;
-		} else {
+		}
+		else {
 			showInfoMsg("Not available in FM mode !");
 		}
 		break;
@@ -1812,7 +1830,7 @@ void drawMenu() {
 			showMenuScreen("Volume", 100);
 			ui.draw_ic24_sound_on(220, 75, BLACK);
 			ui.setFont(Font::FONT_56_NF);
-			ui.drawStringf(TextAlign::CENTER, 206, 382, 100, true, false, false, "%u", rx.getVolume());
+			ui.drawStringf(TextAlign::CENTER, 206, 382, 100, true, false, false, "%u", map(rx.getVolume(), 0, 63, 0, 100));
 		}
 		else if (cmdSoftMuteMaxAtt) {
 			showMenuScreen("SoftMute", 100);
@@ -1837,6 +1855,83 @@ void drawMenu() {
 	}
 }
 
+#define TOP 75
+void drawSpectrum() {
+
+	// Reset bandValues[]
+	for (int i = 0; i < NUM_BANDS; i++) {
+		bandValues[i] = 0;
+	}
+
+	// Sample the audio pin
+	for (int i = 0; i < SAMPLES; i++) {
+		//newTime = micros();
+		vReal[i] = analogRead(AUDIO_INPUT); // A conversion takes about 9.7uS on an ESP32
+		vImag[i] = 0;
+		//while ((micros() - newTime) < sampling_period_us) { /* chill */ }
+	}
+
+	// Compute FFT
+	FFT.dcRemoval();
+	FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+	FFT.compute(FFT_FORWARD);
+	FFT.complexToMagnitude();
+
+	// Analyse FFT results
+	for (int i = 2; i < (SAMPLES / 2); i++) {       // Don't use sample 0 and only first SAMPLES/2 are usable. Each array element represents a frequency bin and its value the amplitude.
+		if (vReal[i] > NOISE) {                    // Add a crude noise filter
+
+			//16 bands, 12kHz top band
+			if (i <= 2)           bandValues[0] += (int)vReal[i];
+			if (i > 2 && i <= 3) bandValues[1] += (int)vReal[i];
+			if (i > 3 && i <= 5) bandValues[2] += (int)vReal[i];
+			if (i > 5 && i <= 7) bandValues[3] += (int)vReal[i];
+			if (i > 7 && i <= 9) bandValues[4] += (int)vReal[i];
+			if (i > 9 && i <= 13) bandValues[5] += (int)vReal[i];
+			if (i > 13 && i <= 18) bandValues[6] += (int)vReal[i];
+			if (i > 18 && i <= 25) bandValues[7] += (int)vReal[i];
+			if (i > 25 && i <= 36) bandValues[8] += (int)vReal[i];
+			if (i > 36 && i <= 50) bandValues[9] += (int)vReal[i];
+			if (i > 50 && i <= 69) bandValues[10] += (int)vReal[i];
+			if (i > 69 && i <= 97) bandValues[11] += (int)vReal[i];
+			if (i > 97 && i <= 135) bandValues[12] += (int)vReal[i];
+			if (i > 135 && i <= 189) bandValues[13] += (int)vReal[i];
+			if (i > 189 && i <= 264) bandValues[14] += (int)vReal[i];
+			if (i > 264) bandValues[15] += (int)vReal[i];
+		}
+	}
+
+	// Process the FFT data into bar heights
+	ui.setWhiteColor();
+	for (byte band = 0; band < NUM_BANDS - 1; band++) {
+		// Scale the bars for the display
+		int barHeight = bandValues[band] / ui.map(rx.getVolume(), 0, 63, 2000, 3000);
+		if (barHeight > TOP) barHeight = TOP;
+
+		// Small amount of averaging between frames
+		barHeight = ((oldBarHeights[band] * 1) + barHeight) / 2;
+
+		// Move peak up
+		if (barHeight > peak[band]) {
+			peak[band] = min(TOP, barHeight);
+		}
+
+		// Draw the bars		
+		//ui.lcd()->drawVLine(300 + (band * 4), 240 - barHeight, barHeight);
+		ui.lcd()->drawBox(390 - (band * 6), 240 - barHeight, 5, barHeight);
+		//ui.lcd()->drawFrame(390 - (band * 6), 240 - TOP, 5, TOP);
+
+		ui.lcd()->drawBox(390 - (band * 6), 240 - peak[band] - 2, 5, 2);
+
+		oldBarHeights[band] = barHeight;
+	}
+
+	//EVERY_N_MILLISECONDS(60) {
+		for (byte band = 0; band < NUM_BANDS - 1; band++)
+		  if (peak[band] > 0) peak[band] -= 1;		
+	//}
+}
+
 void loop() {
 	// Check if the encoder has moved.
 
@@ -1844,7 +1939,7 @@ void loop() {
 
 	if (encoder.encoderChanged()) {
 		encoderCount = encoder.getEncoderValue();
-		encoder.setEncoderValue(0);		
+		encoder.setEncoderValue(0);
 	}
 
 	if (encoderCount != 0)
@@ -1891,7 +1986,7 @@ void loop() {
 			disableCommands();
 		}
 		if (infoShow) {
-			infoShow = false;		
+			infoShow = false;
 		}
 
 		elapsedCommand = millis();
@@ -1925,6 +2020,8 @@ void loop() {
 		background_timer = millis();
 		showStatus();
 		drawMainVFO();
+		drawSpectrum();
+
 		drawMenu();
 		if (infoShow) {
 			ui.showStatusScreen("", infoMessage);
@@ -1932,9 +2029,8 @@ void loop() {
 		ui.updateDisplay();
 	}
 
-	// Run clock
-	clock_time();
-
 	// Add a small default delay in the main loop
-	delay(5);
+	//delay(5);
+
+
 }

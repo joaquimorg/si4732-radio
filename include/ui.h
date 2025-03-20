@@ -350,11 +350,11 @@ public:
         //lcd()->drawStr(35, 18, "joaquim.org");
 
         if(itIsTimeToSave) {
-            draw_ic24_save(280, 1, BLACK);
+            draw_ic24_save(275, 1, BLACK);
         }        
 
-        draw_ic24_sound_on(310, 3, BLACK);
-        drawStringf(TextAlign::RIGHT, 0, 390, 18, true, false, false, "%02u %%", volume);
+        draw_ic24_sound_on(300, 3, BLACK);
+        drawStringf(TextAlign::RIGHT, 0, 390, 18, true, false, false, "%02u %%", map(volume, 0, 63, 0, 100));
 
         lcd()->drawHLine(0, 24, W);
     };
