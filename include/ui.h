@@ -6,6 +6,7 @@
 #include "icons.h"
 #include "images/welcome.h"
 
+#include "fonts/font_18_tf.h"
 #include "fonts/font_20_mn.h"
 #include "fonts/font_20_tf.h"
 #include "fonts/font_B20_tf.h"
@@ -22,6 +23,7 @@ enum class TextAlign {
 };
 
 enum class Font {
+    FONT_18_TF,
     FONT_20_MN,
     FONT_20_TF,
     FONT_B20_TF,
@@ -72,6 +74,9 @@ public:
 
     void setFont(Font font) {
         switch (font) {
+        case Font::FONT_18_TF:
+            lcd()->setFont(u8g2_font_18_tf);
+            break;
         case Font::FONT_20_MN:
             lcd()->setFont(u8g2_font_20_mn);
             break;
@@ -196,7 +201,7 @@ public:
         }
     };
 
-#define LINE_SPACING_MULTILINE_TEXT_PX 2
+#define LINE_SPACING_MULTILINE_TEXT_PX 1
 
     uint32_t draw_string_multi_line(const char* str, uint8_t max_chr_per_line, int32_t x, int32_t y) {
         uint32_t string_length_bytes = strlen(str);

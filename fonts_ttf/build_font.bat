@@ -19,6 +19,9 @@ if "%extensao%"=="" (
 echo Executando FontForge para converter a fonte...
 call "C:\Program Files (x86)\FontForgeBuilds\fontforge.bat" -script convert.py "ttf\%fonte_completa%"
 
+echo Criando font_18_tf.h...
+call .\bdfconv_2_22.exe -v -f 1 -m "32-127" "ttf\%nome_base%-18.bdf" -o ../include/fonts/font_18_tf.h -n u8g2_font_18_tf
+
 echo Criando font_20_tf.h...
 call .\bdfconv_2_22.exe -v -f 1 -m "32-127" "ttf\%nome_base%-20.bdf" -o ../include/fonts/font_20_tf.h -n u8g2_font_20_tf
 

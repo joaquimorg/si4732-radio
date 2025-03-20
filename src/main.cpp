@@ -624,35 +624,35 @@ void drawMainVFO() {
 
 	ui.setFont(Font::FONT_20_TF);
 
-	ui.draw_ic24_bandwidth(150, 32, BLACK);
+	ui.draw_ic24_step(20, 35, BLACK);
+	if (band[bandIdx].bandType == FM_BAND_TYPE) {
+		ui.drawString(TextAlign::LEFT, 55, 0, 48, true, true, false, getStr(FmStepStr, currentStepIdx));
+	}
+	else {
+		ui.drawString(TextAlign::LEFT, 55, 0, 48, true, true, false, getStr(AmSsbStepStr, currentStepIdx));
+	}
+
+	ui.draw_ic24_bandwidth(150, 28, BLACK);
 	if (isSSB())
 	{
-		ui.drawString(TextAlign::LEFT, 180, 0, 52, true, true, false, getStr(bandwidthSSBStr, bwIdxSSB));
+		ui.drawString(TextAlign::LEFT, 180, 0, 48, true, true, false, getStr(bandwidthSSBStr, bwIdxSSB));
 	}
 	else if (currentMode == AM)
 	{
-		ui.drawString(TextAlign::LEFT, 180, 0, 52, true, true, false, getStr(bandwidthAMStr, bwIdxAM));
+		ui.drawString(TextAlign::LEFT, 180, 0, 48, true, true, false, getStr(bandwidthAMStr, bwIdxAM));
 	}
 	else
 	{
-		ui.drawString(TextAlign::LEFT, 180, 0, 52, true, true, false, getStr(bandwidthFMStr, bwIdxFM));
-	}
+		ui.drawString(TextAlign::LEFT, 180, 0, 48, true, true, false, getStr(bandwidthFMStr, bwIdxFM));
+	}	
 
-	ui.draw_ic24_step(20, 39, BLACK);
-	if (band[bandIdx].bandType == FM_BAND_TYPE) {
-		ui.drawString(TextAlign::LEFT, 55, 0, 52, true, true, false, getStr(FmStepStr, currentStepIdx));
-	}
-	else {
-		ui.drawString(TextAlign::LEFT, 55, 0, 52, true, true, false, getStr(AmSsbStepStr, currentStepIdx));
-	}
-
-	ui.draw_ic24_agc(273, 36, BLACK);
+	ui.draw_ic24_agc(273, 32, BLACK);
 	if (agcNdx == 0 && agcIdx == 0) {
-		ui.drawString(TextAlign::LEFT, 300, 0, 52, true, true, false, "AGC ON");
+		ui.drawString(TextAlign::LEFT, 300, 0, 48, true, true, false, "AGC ON");
 	}
 	else
 	{
-		ui.drawStringf(TextAlign::LEFT, 300, 0, 52, true, true, false, "ATT: %2.2d", agcNdx);
+		ui.drawStringf(TextAlign::LEFT, 300, 0, 48, true, true, false, "ATT: %2.2d", agcNdx);
 	}
 
 	// RSSI
@@ -669,10 +669,10 @@ void drawMainVFO() {
 		if (stationName != nullptr) {
 			//ui.setBlackColor();
 			ui.setFont(Font::FONT_B20_TF);
-			ui.drawStringf(TextAlign::CENTER, 10, 300, 180, false, false, false, "%s", stationName);
+			ui.drawStringf(TextAlign::CENTER, 10, 300, 177, false, false, false, "%s", stationName);
 			if (rdsMsg != nullptr) {
-				ui.setFont(Font::FONT_20_TF);
-				ui.draw_string_multi_line(rdsMsg, 27, 5, 200);
+				ui.setFont(Font::FONT_18_TF);
+				ui.draw_string_multi_line(rdsMsg, 30, 5, 195);
 			}
 		}
 
@@ -682,7 +682,7 @@ void drawMainVFO() {
 	}
 	else {
 		ui.setFont(Font::FONT_B20_TF);
-		ui.drawStringf(TextAlign::CENTER, 10, 390, 180, false, false, false, band[bandIdx].bandName);
+		ui.drawStringf(TextAlign::CENTER, 10, 300, 180, false, false, false, band[bandIdx].bandName);
 
 		ui.setFont(Font::FONT_20_TF);
 		ui.draw_start(10, 195, WHITE);
@@ -1918,10 +1918,10 @@ void drawSpectrum() {
 
 		// Draw the bars		
 		//ui.lcd()->drawVLine(300 + (band * 4), 240 - barHeight, barHeight);
-		ui.lcd()->drawBox(390 - (band * 6), 240 - barHeight, 5, barHeight);
+		ui.lcd()->drawBox(390 - (band * 7), 240 - barHeight, 6, barHeight);
 		//ui.lcd()->drawFrame(390 - (band * 6), 240 - TOP, 5, TOP);
 
-		ui.lcd()->drawBox(390 - (band * 6), 240 - peak[band] - 2, 5, 2);
+		ui.lcd()->drawBox(390 - (band * 7), 240 - peak[band] - 2, 6, 2);
 
 		oldBarHeights[band] = barHeight;
 	}
