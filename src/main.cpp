@@ -7,7 +7,7 @@
 #include <ESP32RotaryEncoder.h>
 #include "global.h"
 #include "ui.h"
-#include "patch_init.h"          // SSB patch for whole SSBRX initialization string
+#include "patch_full.h"          // SSB patch for whole SSBRX initialization string
 
 
 UI ui;
@@ -238,42 +238,43 @@ typedef struct
 */
 
 Band band[] = {
-	{  "FM" 				, FM_BAND_TYPE,  FM,  8750, 10800,  9740,  1, 0, 0}, // FM           0
-	{  "LW" 				, LW_BAND_TYPE,  AM,   130,   279,   198,  0, 4, 0}, // LW           1
-	{  "AM" 				, MW_BAND_TYPE,  AM,   522,  1701,  1395,  0, 4, 0}, // AM           2
-	{  "Ham 600M (BEACON)"	, LW_BAND_TYPE,  AM,   280,   470,   284,  0, 4, 0}, // Ham  600M    3
-	{  "Ham 630M" 			, SW_BAND_TYPE, LSB,   472,   479,   475,  0, 4, 0}, // Ham  630M    4
-	{  "Ham 160M" 			, SW_BAND_TYPE, LSB,  1800,  1910,  1899,  0, 4, 0}, // Ham  160M    5
-	{  "120M" 				, SW_BAND_TYPE,  AM,  2300,  2495,  2400,  0, 4, 0}, //      120M    6
-	{  "90M" 				, SW_BAND_TYPE,  AM,  3200,  3400,  3300,  0, 4, 0}, //       90M    7
-	{  "Ham 80M" 			, SW_BAND_TYPE, LSB,  3500,  3800,  3630,  0, 4, 0}, // Ham   80M    8
-	{  "75M" 				, SW_BAND_TYPE,  AM,  3900,  4000,  3950,  0, 4, 0}, //       75M    9
-	{  "Ham 60M" 			, SW_BAND_TYPE, USB,  5330,  5410,  5375,  0, 4, 0}, // Ham   60M   10
-	{  "49M" 				, SW_BAND_TYPE,  AM,  5900,  6200,  6000,  0, 4, 0}, //       49M   11
-	{  "Ham 40M" 			, SW_BAND_TYPE, LSB,  7000,  7200,  7185,  0, 4, 0}, // Ham   40M   12
-	{  "41M" 				, SW_BAND_TYPE,  AM,  7200,  7450,  7210,  0, 4, 0}, //       41M   13
-	{  "31M" 				, SW_BAND_TYPE,  AM,  9400,  9900,  9600,  0, 4, 0}, //       31M   14
-	{  "Ham 30M" 			, SW_BAND_TYPE, USB, 10100, 10150, 10125,  0, 4, 0}, // Ham   30M   15
-	{  "25M" 				, SW_BAND_TYPE,  AM, 11600, 12100, 11700,  0, 4, 0}, //       25M   16
-	{  "22M" 				, SW_BAND_TYPE,  AM, 13570, 13870, 13700,  0, 4, 0}, //       22M   17
-	{  "Ham 20M" 			, SW_BAND_TYPE, USB, 14000, 14350, 14250,  0, 4, 0}, // Ham   20M   18
-	{  "19M" 				, SW_BAND_TYPE,  AM, 15100, 15830, 15700,  0, 4, 0}, //       19M   19
-	{  "Ham 17M" 			, SW_BAND_TYPE, USB, 18068, 18168, 18100,  0, 4, 0}, // Ham   17M   20
-	{  "16M" 				, SW_BAND_TYPE,  AM, 17480, 17900, 17600,  0, 4, 0}, //       16M   21
-	{  "15M" 				, SW_BAND_TYPE,  AM, 18900, 19020, 18950,  0, 4, 0}, //       15M   22
-	{  "Ham 15M" 			, SW_BAND_TYPE, USB, 21000, 21450, 21350,  0, 4, 0}, // Ham   15M   23
-	{  "13M" 				, SW_BAND_TYPE,  AM, 21450, 21850, 21500,  0, 4, 0}, //       13M   24
-	{  "Ham 12M" 			, SW_BAND_TYPE, USB, 24890, 24990, 24940,  0, 4, 0}, // Ham   12M   25
-	{  "11M" 				, SW_BAND_TYPE,  AM, 25670, 26100, 25800,  0, 4, 0}, //       11M   26
-	{  "CB" 				, SW_BAND_TYPE,  AM, 26200, 27990, 27200,  0, 4, 0}, // CB band     27
-	{  "Ham 10M" 			, SW_BAND_TYPE, USB, 28000, 30000, 28500,  0, 4, 0}, // Ham   10M   28
-	{  "Whole SW" 			, SW_BAND_TYPE,  AM,  1730, 30000, 15500,  0, 4, 0}  // Whole SW    29
+	{  "FM" 		, FM_BAND_TYPE,  FM,  8750, 10800,  9740,  1, 0, 0}, // FM        
+	{  "LW" 		, LW_BAND_TYPE,  AM,   130,   279,   198,  0, 4, 0}, // LW        
+	{  "AM" 		, MW_BAND_TYPE,  AM,   522,  1701,  1395,  0, 4, 0}, // AM        
+	{  "Whole SW"	, SW_BAND_TYPE,  AM,  1730, 30000, 15500,  0, 4, 0}, // Whole SW  
+	{  "Ham 600M"	, LW_BAND_TYPE,  AM,   280,   470,   284,  0, 4, 0}, // Ham  600M 
+	{  "Ham 630M" 	, SW_BAND_TYPE, LSB,   472,   479,   475,  0, 4, 0}, // Ham  630M 
+	{  "Ham 160M" 	, SW_BAND_TYPE, LSB,  1800,  1910,  1899,  0, 4, 0}, // Ham  160M 
+	{  "Ham 80M" 	, SW_BAND_TYPE, LSB,  3500,  3800,  3630,  0, 4, 0}, // Ham   80M 
+	{  "Ham 60M" 	, SW_BAND_TYPE, USB,  5330,  5410,  5375,  0, 4, 0}, // Ham   60M 
+	{  "Ham 40M" 	, SW_BAND_TYPE, LSB,  7000,  7200,  7185,  0, 4, 0}, // Ham   40M 
+	{  "Ham 30M" 	, SW_BAND_TYPE, USB, 10100, 10150, 10125,  0, 4, 0}, // Ham   30M 
+	{  "Ham 20M" 	, SW_BAND_TYPE, USB, 14000, 14350, 14250,  0, 4, 0}, // Ham   20M 
+	{  "Ham 17M" 	, SW_BAND_TYPE, USB, 18068, 18168, 18100,  0, 4, 0}, // Ham   17M 
+	{  "Ham 15M" 	, SW_BAND_TYPE, USB, 21000, 21450, 21350,  0, 4, 0}, // Ham   15M 
+	{  "Ham 12M" 	, SW_BAND_TYPE, USB, 24890, 24990, 24940,  0, 4, 0}, // Ham   12M 	
+	{  "Ham 10M"	, SW_BAND_TYPE, USB, 28000, 30000, 28500,  0, 4, 0}, // Ham   10M 
+	{  "CB" 		, SW_BAND_TYPE,  AM, 26200, 27990, 27200,  0, 4, 0}, // CB band
+	{  "120M" 		, SW_BAND_TYPE,  AM,  2300,  2495,  2400,  0, 4, 0}, //      120M 
+	{  "90M" 		, SW_BAND_TYPE,  AM,  3200,  3400,  3300,  0, 4, 0}, //       90M 
+	{  "75M" 		, SW_BAND_TYPE,  AM,  3900,  4000,  3950,  0, 4, 0}, //       75M 
+	{  "49M" 		, SW_BAND_TYPE,  AM,  5900,  6200,  6000,  0, 4, 0}, //       49M 
+	{  "41M" 		, SW_BAND_TYPE,  AM,  7200,  7450,  7210,  0, 4, 0}, //       41M 
+	{  "31M" 		, SW_BAND_TYPE,  AM,  9400,  9900,  9600,  0, 4, 0}, //       31M 
+	{  "25M" 		, SW_BAND_TYPE,  AM, 11600, 12100, 11700,  0, 4, 0}, //       25M 
+	{  "22M" 		, SW_BAND_TYPE,  AM, 13570, 13870, 13700,  0, 4, 0}, //       22M 
+	{  "19M" 		, SW_BAND_TYPE,  AM, 15100, 15830, 15700,  0, 4, 0}, //       19M 
+	{  "16M" 		, SW_BAND_TYPE,  AM, 17480, 17900, 17600,  0, 4, 0}, //       16M 
+	{  "15M" 		, SW_BAND_TYPE,  AM, 18900, 19020, 18950,  0, 4, 0}, //       15M 
+	{  "13M" 		, SW_BAND_TYPE,  AM, 21450, 21850, 21500,  0, 4, 0}, //       13M 
+	{  "11M" 		, SW_BAND_TYPE,  AM, 25670, 26100, 25800,  0, 4, 0}  //       11M 	   
+	
 };
 
 const int lastBand = (sizeof band / sizeof(Band)) - 1;
 int bandIdx = 0;
 
-const char* bandStr = "FM\nLW\nAM\nHam 600M\nHam 630M\nHam 160M\n120M\n90M\nHam 80M\n75M\nHam 60M\n49M\nHam 40M\n41M\n31M\nHam 30M\n25M\n22M\nHam 20M\n19M\nHam 17M\n16M\n15M\nHam 15M\n13M\nHam 12M\n11M\nCB band\nHam 10M\nWhole SW";
+const char* bandStr = "FM\nLW\nAM\nWhole SW\nHam 600M\nHam 630M\nHam 160M\nHam 80M\nHam 60M\nHam 40M\nHam 30M\nHam 20M\nHam 17M\nHam 15M\nHam 12M\nHam 10M\nCB\n120M\n90M\n75M\n49M\n41M\n31M\n25M\n22M\n19M\n16M\n15M\n13M\n11M";
 
 
 //int tabStep[] = {1, 5, 10, 50, 100, 500, 1000};
@@ -319,9 +320,9 @@ int8_t menuIdx = VOLUME;
 
 /* ---------------------------------------- */
 #define SAMPLES         512          // Must be a power of 2
-#define SAMPLING_FREQ   60000         // Hz, must be 40000 or less due to ADC conversion time. Determines maximum frequency that can be analysed by the FFT Fmax=sampleF/2.
+#define SAMPLING_FREQ   30000         // Hz, must be 40000 or less due to ADC conversion time. Determines maximum frequency that can be analysed by the FFT Fmax=sampleF/2.
 #define AMPLITUDE       100          // Depending on your audio source level, you may need to alter this value. Can be used as a 'sensitivity' control.
-#define NOISE           1000           // Used as a crude noise filter, values below this are ignored
+#define NOISE           100           // Used as a crude noise filter, values below this are ignored
 #define NUM_BANDS       16            // To change this, you will need to change the bunch of if statements describing the mapping from bins to bands
 
 // Sampling and FFT stuff
@@ -644,7 +645,7 @@ void drawMainVFO() {
 	else
 	{
 		ui.drawString(TextAlign::LEFT, 180, 0, 48, true, true, false, getStr(bandwidthFMStr, bwIdxFM));
-	}	
+	}
 
 	ui.draw_ic24_agc(273, 32, BLACK);
 	if (agcNdx == 0 && agcIdx == 0) {
@@ -656,10 +657,10 @@ void drawMainVFO() {
 	}
 
 	// RSSI
-	ui.drawRSSI(rssi, getStrength(), 40, 120);
+	ui.drawRSSI(rssi, getStrength(), snr, 40, 120);
 
 	ui.setBlackColor();
-	ui.lcd()->drawBox(0, 160, 400, 80);
+	ui.lcd()->drawBox(0, 160, 288, 80);
 
 	if (band[bandIdx].bandType == FM_BAND_TYPE) {
 		if (rx.getCurrentPilot()) {
@@ -686,11 +687,94 @@ void drawMainVFO() {
 
 		ui.setFont(Font::FONT_20_TF);
 		ui.draw_start(10, 195, WHITE);
-		ui.drawFrequency(band[bandIdx].minimumFreq, 25, 210);
+		ui.drawFrequency(band[bandIdx].minimumFreq, 30, 210);
 
 		ui.draw_finish(10, 215, WHITE);
-		ui.drawFrequency(band[bandIdx].maximumFreq, 25, 230);
+		ui.drawFrequency(band[bandIdx].maximumFreq, 30, 230);
 	}
+}
+
+#define TOP 75
+void drawSpectrum() {
+
+	// Reset bandValues[]
+	for (int i = 0; i < NUM_BANDS; i++) {
+		bandValues[i] = 0;
+	}
+
+	// Sample the audio pin
+	for (int i = 0; i < SAMPLES; i++) {
+		//newTime = micros();
+		vReal[i] = analogRead(AUDIO_INPUT); // A conversion takes about 9.7uS on an ESP32
+		vImag[i] = 0;
+		//while ((micros() - newTime) < sampling_period_us) { /* chill */ }
+	}
+
+	// Compute FFT
+	FFT.dcRemoval();
+	FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+	FFT.compute(FFT_FORWARD);
+	FFT.complexToMagnitude();
+
+	// Analyse FFT results
+	for (int i = 2; i < (SAMPLES / 2); i++) {       // Don't use sample 0 and only first SAMPLES/2 are usable. Each array element represents a frequency bin and its value the amplitude.
+		if (vReal[i] > NOISE) {                    // Add a crude noise filter
+
+			//16 bands, 12kHz top band
+			if (i <= 2)           bandValues[0] += (int)vReal[i];
+			if (i > 2 && i <= 3) bandValues[1] += (int)vReal[i];
+			if (i > 3 && i <= 5) bandValues[2] += (int)vReal[i];
+			if (i > 5 && i <= 7) bandValues[3] += (int)vReal[i];
+			if (i > 7 && i <= 9) bandValues[4] += (int)vReal[i];
+			if (i > 9 && i <= 13) bandValues[5] += (int)vReal[i];
+			if (i > 13 && i <= 18) bandValues[6] += (int)vReal[i];
+			if (i > 18 && i <= 25) bandValues[7] += (int)vReal[i];
+			if (i > 25 && i <= 36) bandValues[8] += (int)vReal[i];
+			if (i > 36 && i <= 50) bandValues[9] += (int)vReal[i];
+			if (i > 50 && i <= 69) bandValues[10] += (int)vReal[i];
+			if (i > 69 && i <= 97) bandValues[11] += (int)vReal[i];
+			if (i > 97 && i <= 135) bandValues[12] += (int)vReal[i];
+			if (i > 135 && i <= 189) bandValues[13] += (int)vReal[i];
+			if (i > 189 && i <= 264) bandValues[14] += (int)vReal[i];
+			if (i > 264) bandValues[15] += (int)vReal[i];
+		}
+	}
+
+	// Process the FFT data into bar heights
+
+	ui.setBlackColor();
+	ui.lcd()->drawBox(288, 160, 112, 80);
+
+	ui.setWhiteColor();
+	ui.lcd()->drawVLine(288, 160, 80);
+
+	for (byte band = 0; band < NUM_BANDS - 1; band++) {
+		// Scale the bars for the display
+		int barHeight = bandValues[band] / ui.map(rx.getVolume(), 0, 63, 1000, 2000);
+		if (barHeight > TOP) barHeight = TOP;
+
+		// Small amount of averaging between frames
+		barHeight = ((oldBarHeights[band] * 1) + barHeight) / 2;
+
+		// Move peak up
+		if (barHeight > peak[band]) {
+			peak[band] = min(TOP, barHeight);
+		}
+
+		// Draw the bars		
+		//ui.lcd()->drawVLine(300 + (band * 4), 240 - barHeight, barHeight);
+		ui.lcd()->drawBox(390 - (band * 7), 240 - barHeight, 6, barHeight);
+		//ui.lcd()->drawFrame(390 - (band * 6), 240 - TOP, 5, TOP);
+
+		ui.lcd()->drawBox(390 - (band * 7), 240 - peak[band] - 2, 6, 2);
+
+		oldBarHeights[band] = barHeight;
+	}
+
+	//EVERY_N_MILLISECONDS(60) {
+	for (byte band = 0; band < NUM_BANDS - 1; band++)
+		if (peak[band] > 0) peak[band] -= 1;
+	//}
 }
 
 /**
@@ -1270,40 +1354,39 @@ bool isMenuMode() {
 uint8_t getStrength() {
 	if (currentMode != FM) {
 		//dBuV to S point conversion HF
-		if ((rssi >= 0) and (rssi <= 1)) return  1;  // S0
-		if ((rssi > 1) and (rssi <= 2)) return  2;  // S1         // G8PTN: Corrected table
-		if ((rssi > 2) and (rssi <= 3)) return  3;  // S2
-		if ((rssi > 3) and (rssi <= 4)) return  4;  // S3
-		if ((rssi > 4) and (rssi <= 10)) return  5;  // S4
-		if ((rssi > 10) and (rssi <= 16)) return  6;  // S5
-		if ((rssi > 16) and (rssi <= 22)) return  7;  // S6
-		if ((rssi > 22) and (rssi <= 28)) return  8;  // S7
-		if ((rssi > 28) and (rssi <= 34)) return  9;  // S8
-		if ((rssi > 34) and (rssi <= 44)) return 10;  // S9
-		if ((rssi > 44) and (rssi <= 54)) return 11;  // S9 +10
-		if ((rssi > 54) and (rssi <= 64)) return 12;  // S9 +20
-		if ((rssi > 64) and (rssi <= 74)) return 13;  // S9 +30
-		if ((rssi > 74) and (rssi <= 84)) return 14;  // S9 +40
-		if ((rssi > 84) and (rssi <= 94)) return 15;  // S9 +50
-		if (rssi > 94)                   return 16;  // S9 +60
-		if (rssi > 95)                   return 17;  //>S9 +60
+		if ((rssi >= 0) and (rssi <= 1)) 	return  1;  // S0
+		if ((rssi > 1) 	and (rssi <= 2)) 	return  2;  // S1         // G8PTN: Corrected table
+		if ((rssi > 2) 	and (rssi <= 3)) 	return  3;  // S2
+		if ((rssi > 3) 	and (rssi <= 4)) 	return  4;  // S3
+		if ((rssi > 4) 	and (rssi <= 10)) 	return  5;  // S4
+		if ((rssi > 10) and (rssi <= 16)) 	return  6;  // S5
+		if ((rssi > 16) and (rssi <= 22)) 	return  7;  // S6
+		if ((rssi > 22) and (rssi <= 28)) 	return  8;  // S7
+		if ((rssi > 28) and (rssi <= 34)) 	return  9;  // S8
+		if ((rssi > 34) and (rssi <= 44)) 	return 10;  // S9
+		if ((rssi > 44) and (rssi <= 54)) 	return 11;  // S9 +10
+		if ((rssi > 54) and (rssi <= 64)) 	return 12;  // S9 +20
+		if ((rssi > 64) and (rssi <= 74)) 	return 13;  // S9 +30
+		if ((rssi > 74) and (rssi <= 84)) 	return 14;  // S9 +40
+		if ((rssi > 84) and (rssi <= 94)) 	return 15;  // S9 +50
+		if (rssi > 94)                   	return 16;  // S9 +60
+		if (rssi > 95)                   	return 17;  //>S9 +60
 	}
 	else
 	{
 		//dBuV to S point conversion FM
-		if (rssi >= 0 and (rssi <= 1)) return  1;               // G8PTN: Corrected table
-		if ((rssi > 1) and (rssi <= 2)) return  7;  // S6
-		if ((rssi > 2) and (rssi <= 8)) return  8;  // S7
-		if ((rssi > 8) and (rssi <= 14)) return  9;  // S8
-		if ((rssi > 14) and (rssi <= 24)) return 10;  // S9
-		if ((rssi > 24) and (rssi <= 34)) return 11;  // S9 +10
-		if ((rssi > 34) and (rssi <= 44)) return 12;  // S9 +20
-		if ((rssi > 44) and (rssi <= 54)) return 13;  // S9 +30
-		if ((rssi > 54) and (rssi <= 64)) return 14;  // S9 +40
-		if ((rssi > 64) and (rssi <= 74)) return 15;  // S9 +50
-		if (rssi > 74)                   return 16;  // S9 +60
-		if (rssi > 76)                   return 17;  //>S9 +60
-		// newStereoPilot=si4735.getCurrentPilot();
+		if (rssi >= 0 	and (rssi <= 1)) 	return  1;               // G8PTN: Corrected table
+		if ((rssi > 1) 	and (rssi <= 2)) 	return  7;  // S6
+		if ((rssi > 2) 	and (rssi <= 8)) 	return  8;  // S7
+		if ((rssi > 8) 	and (rssi <= 14)) 	return  9;  // S8
+		if ((rssi > 14) and (rssi <= 24)) 	return 10;  // S9
+		if ((rssi > 24) and (rssi <= 34)) 	return 11;  // S9 +10
+		if ((rssi > 34) and (rssi <= 44)) 	return 12;  // S9 +20
+		if ((rssi > 44) and (rssi <= 54)) 	return 13;  // S9 +30
+		if ((rssi > 54) and (rssi <= 64)) 	return 14;  // S9 +40
+		if ((rssi > 64) and (rssi <= 74)) 	return 15;  // S9 +50
+		if (rssi > 74)                   	return 16;  // S9 +60
+		if (rssi > 76)                   	return 17;  //>S9 +60
 	}
 
 	return 0;
@@ -1497,6 +1580,8 @@ void setup() {
 
 	Wire.begin(ESP32_I2C_SDA, ESP32_I2C_SCL);
 
+	delay(300);
+
 	// EEPROM
 	// Note: Use EEPROM.begin(EEPROM_SIZE) before use and EEPROM.begin.end after use to free up memory and avoid memory leaks
 	EEPROM.begin(EEPROM_SIZE);
@@ -1504,8 +1589,8 @@ void setup() {
 	// Press and hold Encoder button to force an EEPROM reset
 	// Indirectly forces the reset by setting app_id = 0 (Detectected in the subsequent check for app_id and app_ver)
 	// Note: EEPROM reset is recommended after firmware updates
-	pushButton.poll();
-	if (pushButton.pushed())
+
+	if (digitalRead(ROTARY_ENCODER_BUTTON_PIN) == LOW)
 	{
 		EEPROM.write(eeprom_address, 0);
 		EEPROM.commit();
@@ -1855,83 +1940,6 @@ void drawMenu() {
 	}
 }
 
-#define TOP 75
-void drawSpectrum() {
-
-	// Reset bandValues[]
-	for (int i = 0; i < NUM_BANDS; i++) {
-		bandValues[i] = 0;
-	}
-
-	// Sample the audio pin
-	for (int i = 0; i < SAMPLES; i++) {
-		//newTime = micros();
-		vReal[i] = analogRead(AUDIO_INPUT); // A conversion takes about 9.7uS on an ESP32
-		vImag[i] = 0;
-		//while ((micros() - newTime) < sampling_period_us) { /* chill */ }
-	}
-
-	// Compute FFT
-	FFT.dcRemoval();
-	FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD);
-	FFT.compute(FFT_FORWARD);
-	FFT.complexToMagnitude();
-
-	// Analyse FFT results
-	for (int i = 2; i < (SAMPLES / 2); i++) {       // Don't use sample 0 and only first SAMPLES/2 are usable. Each array element represents a frequency bin and its value the amplitude.
-		if (vReal[i] > NOISE) {                    // Add a crude noise filter
-
-			//16 bands, 12kHz top band
-			if (i <= 2)           bandValues[0] += (int)vReal[i];
-			if (i > 2 && i <= 3) bandValues[1] += (int)vReal[i];
-			if (i > 3 && i <= 5) bandValues[2] += (int)vReal[i];
-			if (i > 5 && i <= 7) bandValues[3] += (int)vReal[i];
-			if (i > 7 && i <= 9) bandValues[4] += (int)vReal[i];
-			if (i > 9 && i <= 13) bandValues[5] += (int)vReal[i];
-			if (i > 13 && i <= 18) bandValues[6] += (int)vReal[i];
-			if (i > 18 && i <= 25) bandValues[7] += (int)vReal[i];
-			if (i > 25 && i <= 36) bandValues[8] += (int)vReal[i];
-			if (i > 36 && i <= 50) bandValues[9] += (int)vReal[i];
-			if (i > 50 && i <= 69) bandValues[10] += (int)vReal[i];
-			if (i > 69 && i <= 97) bandValues[11] += (int)vReal[i];
-			if (i > 97 && i <= 135) bandValues[12] += (int)vReal[i];
-			if (i > 135 && i <= 189) bandValues[13] += (int)vReal[i];
-			if (i > 189 && i <= 264) bandValues[14] += (int)vReal[i];
-			if (i > 264) bandValues[15] += (int)vReal[i];
-		}
-	}
-
-	// Process the FFT data into bar heights
-	ui.setWhiteColor();
-	for (byte band = 0; band < NUM_BANDS - 1; band++) {
-		// Scale the bars for the display
-		int barHeight = bandValues[band] / ui.map(rx.getVolume(), 0, 63, 2000, 3000);
-		if (barHeight > TOP) barHeight = TOP;
-
-		// Small amount of averaging between frames
-		barHeight = ((oldBarHeights[band] * 1) + barHeight) / 2;
-
-		// Move peak up
-		if (barHeight > peak[band]) {
-			peak[band] = min(TOP, barHeight);
-		}
-
-		// Draw the bars		
-		//ui.lcd()->drawVLine(300 + (band * 4), 240 - barHeight, barHeight);
-		ui.lcd()->drawBox(390 - (band * 7), 240 - barHeight, 6, barHeight);
-		//ui.lcd()->drawFrame(390 - (band * 6), 240 - TOP, 5, TOP);
-
-		ui.lcd()->drawBox(390 - (band * 7), 240 - peak[band] - 2, 6, 2);
-
-		oldBarHeights[band] = barHeight;
-	}
-
-	//EVERY_N_MILLISECONDS(60) {
-		for (byte band = 0; band < NUM_BANDS - 1; band++)
-		  if (peak[band] > 0) peak[band] -= 1;		
-	//}
-}
-
 void loop() {
 	// Check if the encoder has moved.
 
@@ -1959,7 +1967,7 @@ void loop() {
 	}
 
 	// Show RSSI status only if this condition has changed
-	if ((millis() - elapsedRSSI) > MIN_ELAPSED_RSSI_TIME * 6)
+	if ((millis() - elapsedRSSI) > MIN_ELAPSED_RSSI_TIME * 2)
 	{
 
 		rx.getCurrentReceivedSignalQuality();

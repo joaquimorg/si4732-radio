@@ -321,7 +321,7 @@ public:
 
         u8g2_uint_t string_length = lcd()->getStrWidth(message);
 
-        int popupWidth = 20 + string_length;
+        int popupWidth = 40 + string_length;
 
         setWhiteColor();
         lcd()->drawRBox((W / 2) - (popupWidth / 2) - 3, (H / 2) - (popupHigh / 2) - 3, popupWidth + 6, popupHigh + 6, 8);
@@ -355,7 +355,7 @@ public:
         //lcd()->drawStr(35, 18, "joaquim.org");
 
         if(itIsTimeToSave) {
-            draw_ic24_save(275, 1, BLACK);
+            draw_ic24_save(270, 1, BLACK);
         }        
 
         draw_ic24_sound_on(300, 3, BLACK);
@@ -415,7 +415,7 @@ public:
         return (delta * rise) / run + out_min;
     }
 
-    void drawRSSI(int rssi, int vu, u8g2_uint_t x, u8g2_uint_t y) {
+    void drawRSSI(int rssi, int vu, int snr, u8g2_uint_t x, u8g2_uint_t y) {
 
         setBlackColor();
         setFont(Font::FONT_32_TF);
@@ -443,7 +443,8 @@ public:
         }
 
         setFont(Font::FONT_20_TF);
-        drawStringf(TextAlign::RIGHT, 0, x + 330, y + 20, true, false, false, "%2u dBuV", rssi);
+        drawStringf(TextAlign::RIGHT, 0, x + 350, y + 10, true, false, false, "%2u dBuV", rssi);
+        drawStringf(TextAlign::RIGHT, 0, x + 350, y + 30, true, false, false, "%2u dB SNR", snr);
 
     }
 
