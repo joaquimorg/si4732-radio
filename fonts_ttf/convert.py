@@ -12,13 +12,13 @@ font_path = sys.argv[1]
 font = fontforge.open(font_path)
 
 # Define o tamanho do bitmap strike corretamente como uma tupla
-font.bitmapSizes = ((18,),(20,),(32,))
+font.bitmapSizes = ((16,),(20,),(32,))
 
 # Seleciona todos os glifos antes de regenerar os bitmaps
 font.selection.all()
 
 # Regenera os glifos em bitmap com a função correta
-font.regenBitmaps((18,),(20,),(32,))
+font.regenBitmaps((16,),(20,),(32,))
 
 # Define o caminho para salvar o arquivo BDF
 output_path = font_path.rsplit('.', 1)[0] + ".bdf"

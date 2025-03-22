@@ -6,7 +6,7 @@
 #include "icons.h"
 #include "images/welcome.h"
 
-#include "fonts/font_18_tf.h"
+#include "fonts/font_16_tf.h"
 #include "fonts/font_20_mn.h"
 #include "fonts/font_20_tf.h"
 #include "fonts/font_B20_tf.h"
@@ -75,7 +75,7 @@ public:
     void setFont(Font font) {
         switch (font) {
         case Font::FONT_18_TF:
-            lcd()->setFont(u8g2_font_18_tf);
+            lcd()->setFont(u8g2_font_16_tf);
             break;
         case Font::FONT_20_MN:
             lcd()->setFont(u8g2_font_20_mn);

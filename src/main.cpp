@@ -1967,7 +1967,7 @@ void loop() {
 	}
 
 	// Show RSSI status only if this condition has changed
-	if ((millis() - elapsedRSSI) > MIN_ELAPSED_RSSI_TIME * 2)
+	if ((millis() - elapsedRSSI) > MIN_ELAPSED_RSSI_TIME)
 	{
 
 		rx.getCurrentReceivedSignalQuality();
