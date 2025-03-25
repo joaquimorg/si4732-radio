@@ -268,7 +268,7 @@ Band band[] = {
 	{  "15M" 		, SW_BAND_TYPE,  AM, 18900, 19020, 18950,  0, 4, 0}, //       15M 
 	{  "13M" 		, SW_BAND_TYPE,  AM, 21450, 21850, 21500,  0, 4, 0}, //       13M 
 	{  "11M" 		, SW_BAND_TYPE,  AM, 25670, 26100, 25800,  0, 4, 0}  //       11M 	   
-	
+
 };
 
 const int lastBand = (sizeof band / sizeof(Band)) - 1;
@@ -319,17 +319,17 @@ int8_t menuIdx = VOLUME;
 
 
 /* ---------------------------------------- */
-#define SAMPLES         512          // Must be a power of 2
-#define SAMPLING_FREQ   30000         // Hz, must be 40000 or less due to ADC conversion time. Determines maximum frequency that can be analysed by the FFT Fmax=sampleF/2.
+#define SAMPLES         256          // Must be a power of 2
+#define SAMPLING_FREQ   40000        // Hz, must be 40000 or less due to ADC conversion time. Determines maximum frequency that can be analysed by the FFT Fmax=sampleF/2.
 #define AMPLITUDE       100          // Depending on your audio source level, you may need to alter this value. Can be used as a 'sensitivity' control.
-#define NOISE           100           // Used as a crude noise filter, values below this are ignored
-#define NUM_BANDS       16            // To change this, you will need to change the bunch of if statements describing the mapping from bins to bands
+#define NOISE           1000         // Used as a crude noise filter, values below this are ignored
+#define NUM_BANDS       SAMPLES / 2  // To change this, you will need to change the bunch of if statements describing the mapping from bins to bands
 
 // Sampling and FFT stuff
 unsigned int sampling_period_us;
-int bandValues[] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
-int peak[] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
-int oldBarHeights[] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+int bandValues[NUM_BANDS] = { 0 };
+int peak[NUM_BANDS] = { 0 };
+int oldBarHeights[NUM_BANDS] = { 0 };
 double vReal[SAMPLES];
 double vImag[SAMPLES];
 unsigned long newTime;
@@ -657,10 +657,10 @@ void drawMainVFO() {
 	}
 
 	// RSSI
-	ui.drawRSSI(rssi, getStrength(), snr, 40, 120);
+	ui.drawRSSI(rssi, getStrength(), snr, 5, 120);
 
 	ui.setBlackColor();
-	ui.lcd()->drawBox(0, 160, 288, 80);
+	ui.lcd()->drawBox(0, 180, 400, 60);
 
 	if (band[bandIdx].bandType == FM_BAND_TYPE) {
 		if (rx.getCurrentPilot()) {
@@ -670,10 +670,10 @@ void drawMainVFO() {
 		if (stationName != nullptr) {
 			//ui.setBlackColor();
 			ui.setFont(Font::FONT_B20_TF);
-			ui.drawStringf(TextAlign::CENTER, 10, 300, 177, false, false, false, "%s", stationName);
+			ui.drawStringf(TextAlign::CENTER, 10, 390, 198, false, false, false, "%s", stationName);
 			if (rdsMsg != nullptr) {
 				ui.setFont(Font::FONT_18_TF);
-				ui.draw_string_multi_line(rdsMsg, 30, 5, 195);
+				ui.draw_string_multi_line(rdsMsg, 48, 5, 215);
 			}
 		}
 
@@ -683,7 +683,7 @@ void drawMainVFO() {
 	}
 	else {
 		ui.setFont(Font::FONT_B20_TF);
-		ui.drawStringf(TextAlign::CENTER, 10, 300, 180, false, false, false, band[bandIdx].bandName);
+		ui.drawStringf(TextAlign::CENTER, 200, 390, 220, false, false, false, band[bandIdx].bandName);
 
 		ui.setFont(Font::FONT_20_TF);
 		ui.draw_start(10, 195, WHITE);
@@ -694,86 +694,95 @@ void drawMainVFO() {
 	}
 }
 
-#define TOP 75
-void drawSpectrum() {
+#define TOP 60
+void drawSpectrum(int x, int y) {
 
 	// Reset bandValues[]
 	for (int i = 0; i < NUM_BANDS; i++) {
 		bandValues[i] = 0;
 	}
 
+	/*
 	// Sample the audio pin
 	for (int i = 0; i < SAMPLES; i++) {
-		//newTime = micros();
+		newTime = micros();
 		vReal[i] = analogRead(AUDIO_INPUT); // A conversion takes about 9.7uS on an ESP32
 		vImag[i] = 0;
-		//while ((micros() - newTime) < sampling_period_us) { /* chill */ }
+		//while ((micros() - newTime) < sampling_period_us) {  }
+	}
+	*/
+
+	newTime = micros();
+	for (int i = 0; i < SAMPLES; i++) {
+		vReal[i] = analogRead(AUDIO_INPUT);
+		vImag[i] = 0;
+		while (micros() - newTime < sampling_period_us) {
+		}
+		newTime += sampling_period_us;
 	}
 
 	// Compute FFT
 	FFT.dcRemoval();
-	FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+	FFT.windowing(FFT_WIN_TYP_RECTANGLE, FFT_FORWARD); // FFT_WIN_TYP_HAMMING
 	FFT.compute(FFT_FORWARD);
 	FFT.complexToMagnitude();
 
-	// Analyse FFT results
-	for (int i = 2; i < (SAMPLES / 2); i++) {       // Don't use sample 0 and only first SAMPLES/2 are usable. Each array element represents a frequency bin and its value the amplitude.
-		if (vReal[i] > NOISE) {                    // Add a crude noise filter
-
-			//16 bands, 12kHz top band
-			if (i <= 2)           bandValues[0] += (int)vReal[i];
-			if (i > 2 && i <= 3) bandValues[1] += (int)vReal[i];
-			if (i > 3 && i <= 5) bandValues[2] += (int)vReal[i];
-			if (i > 5 && i <= 7) bandValues[3] += (int)vReal[i];
-			if (i > 7 && i <= 9) bandValues[4] += (int)vReal[i];
-			if (i > 9 && i <= 13) bandValues[5] += (int)vReal[i];
-			if (i > 13 && i <= 18) bandValues[6] += (int)vReal[i];
-			if (i > 18 && i <= 25) bandValues[7] += (int)vReal[i];
-			if (i > 25 && i <= 36) bandValues[8] += (int)vReal[i];
-			if (i > 36 && i <= 50) bandValues[9] += (int)vReal[i];
-			if (i > 50 && i <= 69) bandValues[10] += (int)vReal[i];
-			if (i > 69 && i <= 97) bandValues[11] += (int)vReal[i];
-			if (i > 97 && i <= 135) bandValues[12] += (int)vReal[i];
-			if (i > 135 && i <= 189) bandValues[13] += (int)vReal[i];
-			if (i > 189 && i <= 264) bandValues[14] += (int)vReal[i];
-			if (i > 264) bandValues[15] += (int)vReal[i];
+	int maxMagnitude = 0;
+	for (int i = 0; i < SAMPLES / 2; i++) {
+		
+		if (vReal[i] > maxMagnitude) {
+			maxMagnitude = vReal[i];
 		}
+	}
+
+	if (maxMagnitude < 9000) {
+		maxMagnitude = 9000;
+	}
+
+	for (int col = 0; col < SAMPLES / 2; ++col) {
+		//bandValues[col] = map(vReal[col], NOISE, 4000, 0, 60);		
+		bandValues[col] = static_cast<int>((vReal[col] / maxMagnitude) * TOP);
 	}
 
 	// Process the FFT data into bar heights
 
 	ui.setBlackColor();
-	ui.lcd()->drawBox(288, 160, 112, 80);
+	ui.lcd()->drawBox(x - 1, y - TOP, 130, TOP);
+
+	/*ui.setWhiteColor();
+	ui.lcd()->drawVLine(288, 160, 80);*/
 
 	ui.setWhiteColor();
-	ui.lcd()->drawVLine(288, 160, 80);
-
-	for (byte band = 0; band < NUM_BANDS - 1; band++) {
+	for (int band = 0; band < NUM_BANDS; band++) {
 		// Scale the bars for the display
-		int barHeight = bandValues[band] / ui.map(rx.getVolume(), 0, 63, 1000, 2000);
+		int barHeight = bandValues[band];// / ui.map(rx.getVolume(), 0, 63, 1000, 2000);
 		if (barHeight > TOP) barHeight = TOP;
 
 		// Small amount of averaging between frames
-		barHeight = ((oldBarHeights[band] * 1) + barHeight) / 2;
+		//barHeight = ((oldBarHeights[band] * 1) + barHeight) / 2;
 
 		// Move peak up
-		if (barHeight > peak[band]) {
-			peak[band] = min(TOP, barHeight);
-		}
+		//if (barHeight > peak[band]) {
+		//	peak[band] = min(TOP, barHeight);
+		//}
 
+		//ui.lcd()->drawPixel(395 - band, 240 - barHeight);
+		if (band > 0) {
+			ui.lcd()->drawLine(x + band - 1, y - oldBarHeights[band - 1], x + band, y - barHeight);
+		}
 		// Draw the bars		
-		//ui.lcd()->drawVLine(300 + (band * 4), 240 - barHeight, barHeight);
-		ui.lcd()->drawBox(390 - (band * 7), 240 - barHeight, 6, barHeight);
+		//ui.lcd()->drawVLine(395 - band, 240 - barHeight, barHeight);
+		//ui.lcd()->drawBox(390 - (band), 240 - barHeight, 1, barHeight);
 		//ui.lcd()->drawFrame(390 - (band * 6), 240 - TOP, 5, TOP);
 
-		ui.lcd()->drawBox(390 - (band * 7), 240 - peak[band] - 2, 6, 2);
+		//ui.lcd()->drawBox(390 - (band), 240 - peak[band] - 2, 1, 2);
 
 		oldBarHeights[band] = barHeight;
 	}
 
 	//EVERY_N_MILLISECONDS(60) {
-	for (byte band = 0; band < NUM_BANDS - 1; band++)
-		if (peak[band] > 0) peak[band] -= 1;
+	//for (byte band = 0; band < NUM_BANDS - 1; band++)
+	//	if (peak[band] > 0) peak[band] -= 1;
 	//}
 }
 
@@ -1355,10 +1364,10 @@ uint8_t getStrength() {
 	if (currentMode != FM) {
 		//dBuV to S point conversion HF
 		if ((rssi >= 0) and (rssi <= 1)) 	return  1;  // S0
-		if ((rssi > 1) 	and (rssi <= 2)) 	return  2;  // S1         // G8PTN: Corrected table
-		if ((rssi > 2) 	and (rssi <= 3)) 	return  3;  // S2
-		if ((rssi > 3) 	and (rssi <= 4)) 	return  4;  // S3
-		if ((rssi > 4) 	and (rssi <= 10)) 	return  5;  // S4
+		if ((rssi > 1) and (rssi <= 2)) 	return  2;  // S1         // G8PTN: Corrected table
+		if ((rssi > 2) and (rssi <= 3)) 	return  3;  // S2
+		if ((rssi > 3) and (rssi <= 4)) 	return  4;  // S3
+		if ((rssi > 4) and (rssi <= 10)) 	return  5;  // S4
 		if ((rssi > 10) and (rssi <= 16)) 	return  6;  // S5
 		if ((rssi > 16) and (rssi <= 22)) 	return  7;  // S6
 		if ((rssi > 22) and (rssi <= 28)) 	return  8;  // S7
@@ -1375,10 +1384,10 @@ uint8_t getStrength() {
 	else
 	{
 		//dBuV to S point conversion FM
-		if (rssi >= 0 	and (rssi <= 1)) 	return  1;               // G8PTN: Corrected table
-		if ((rssi > 1) 	and (rssi <= 2)) 	return  7;  // S6
-		if ((rssi > 2) 	and (rssi <= 8)) 	return  8;  // S7
-		if ((rssi > 8) 	and (rssi <= 14)) 	return  9;  // S8
+		if (rssi >= 0 and (rssi <= 1)) 	return  1;               // G8PTN: Corrected table
+		if ((rssi > 1) and (rssi <= 2)) 	return  7;  // S6
+		if ((rssi > 2) and (rssi <= 8)) 	return  8;  // S7
+		if ((rssi > 8) and (rssi <= 14)) 	return  9;  // S8
 		if ((rssi > 14) and (rssi <= 24)) 	return 10;  // S9
 		if ((rssi > 24) and (rssi <= 34)) 	return 11;  // S9 +10
 		if ((rssi > 34) and (rssi <= 44)) 	return 12;  // S9 +20
@@ -2028,7 +2037,7 @@ void loop() {
 		background_timer = millis();
 		showStatus();
 		drawMainVFO();
-		drawSpectrum();
+		drawSpectrum(265, 175);
 
 		drawMenu();
 		if (infoShow) {

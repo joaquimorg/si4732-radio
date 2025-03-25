@@ -442,9 +442,9 @@ public:
             }
         }
 
-        setFont(Font::FONT_20_TF);
-        drawStringf(TextAlign::RIGHT, 0, x + 350, y + 10, true, false, false, "%2u dBuV", rssi);
-        drawStringf(TextAlign::RIGHT, 0, x + 350, y + 30, true, false, false, "%2u dB SNR", snr);
+        setFont(Font::FONT_18_TF);
+        drawStringf(TextAlign::LEFT, x + 20, 0, y + 50, true, false, false, "%2u dBuV", rssi);
+        drawStringf(TextAlign::LEFT, x + 120, 0, y + 50, true, false, false, "%2u dB SNR", snr);
 
     }
 
