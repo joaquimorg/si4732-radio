@@ -1,3 +1,5 @@
+#define FFT_SPEED_OVER_PRECISION
+
 #include <Arduino.h>
 #include <arduinoFFT.h>
 #include <Wire.h>
@@ -320,7 +322,7 @@ int8_t menuIdx = VOLUME;
 
 /* ---------------------------------------- */
 #define SAMPLES         256          // Must be a power of 2
-#define SAMPLING_FREQ   40000        // Hz, must be 40000 or less due to ADC conversion time. Determines maximum frequency that can be analysed by the FFT Fmax=sampleF/2.
+#define SAMPLING_FREQ   12000        // Hz, must be 40000 or less due to ADC conversion time. Determines maximum frequency that can be analysed by the FFT Fmax=sampleF/2.
 #define AMPLITUDE       100          // Depending on your audio source level, you may need to alter this value. Can be used as a 'sensitivity' control.
 #define NOISE           1000         // Used as a crude noise filter, values below this are ignored
 #define NUM_BANDS       SAMPLES / 2  // To change this, you will need to change the bunch of if statements describing the mapping from bins to bands
@@ -328,36 +330,17 @@ int8_t menuIdx = VOLUME;
 // Sampling and FFT stuff
 unsigned int sampling_period_us;
 int bandValues[NUM_BANDS] = { 0 };
-int peak[NUM_BANDS] = { 0 };
+float peak = 0;
+uint16_t vu = 0;
 int oldBarHeights[NUM_BANDS] = { 0 };
 double vReal[SAMPLES];
 double vImag[SAMPLES];
 unsigned long newTime;
+
+#define NUM_WATERFALL_ROWS 35
+int waterfallData[NUM_WATERFALL_ROWS][NUM_BANDS] = { 0 };
+
 ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, SAMPLES, SAMPLING_FREQ);
-
-hw_timer_t* timerFFT = NULL;
-
-/**
- * brief	HAL functions to toggle EXTCOMIN pin
- */
-void IRAM_ATTR hal_fft(void) {
-
-	// Sample the audio pin
-	for (int i = 0; i < SAMPLES; i++) {
-		//newTime = micros();
-		vReal[i] = analogRead(AUDIO_INPUT); // A conversion takes about 9.7uS on an ESP32
-		vImag[i] = 0;
-		//while ((micros() - newTime) < sampling_period_us) { /* chill */ }
-	}
-
-}
-
-void hal_fft_start() {
-
-	timerFFT = timerBegin(10000);
-	timerAttachInterrupt(timerFFT, &hal_fft);
-	timerAlarm(timerFFT, 10000, true, 0);
-}
 
 /* ---------------------------------------- */
 
@@ -673,7 +656,7 @@ void drawMainVFO() {
 			ui.drawStringf(TextAlign::CENTER, 10, 390, 198, false, false, false, "%s", stationName);
 			if (rdsMsg != nullptr) {
 				ui.setFont(Font::FONT_18_TF);
-				ui.draw_string_multi_line(rdsMsg, 48, 5, 215);
+				ui.draw_string_multi_line(rdsMsg, 45, 5, 215);
 			}
 		}
 
@@ -694,28 +677,43 @@ void drawMainVFO() {
 	}
 }
 
-#define TOP 60
+
+uint8_t intensityToColor(int intensity) {
+	uint8_t color;
+
+	if (intensity == 0) {
+		color = 0;
+	}
+	else if (intensity < 5) {
+		color = 0;
+	}
+	else if (intensity < 10) {
+		color = 0;
+	}
+	else if (intensity < 12) {
+		color = 0;
+	}
+	else {
+		color = 1;
+	}
+
+	return color;
+}
+
+#define TOP 20
 void drawSpectrum(int x, int y) {
+
+	float peak = 0;
 
 	// Reset bandValues[]
 	for (int i = 0; i < NUM_BANDS; i++) {
 		bandValues[i] = 0;
 	}
 
-	/*
-	// Sample the audio pin
-	for (int i = 0; i < SAMPLES; i++) {
-		newTime = micros();
-		vReal[i] = analogRead(AUDIO_INPUT); // A conversion takes about 9.7uS on an ESP32
-		vImag[i] = 0;
-		//while ((micros() - newTime) < sampling_period_us) {  }
-	}
-	*/
-
 	newTime = micros();
 	for (int i = 0; i < SAMPLES; i++) {
 		vReal[i] = analogRead(AUDIO_INPUT);
-		vImag[i] = 0;
+		vImag[i] = 0;		
 		while (micros() - newTime < sampling_period_us) {
 		}
 		newTime += sampling_period_us;
@@ -729,7 +727,7 @@ void drawSpectrum(int x, int y) {
 
 	int maxMagnitude = 0;
 	for (int i = 0; i < SAMPLES / 2; i++) {
-		
+
 		if (vReal[i] > maxMagnitude) {
 			maxMagnitude = vReal[i];
 		}
@@ -742,48 +740,65 @@ void drawSpectrum(int x, int y) {
 	for (int col = 0; col < SAMPLES / 2; ++col) {
 		//bandValues[col] = map(vReal[col], NOISE, 4000, 0, 60);		
 		bandValues[col] = static_cast<int>((vReal[col] / maxMagnitude) * TOP);
+		waterfallData[0][col] = bandValues[col];
+		if (vReal[col] > 5000) {
+			peak += vReal[col] - 5000;
+		}
 	}
 
 	// Process the FFT data into bar heights
 
 	ui.setBlackColor();
-	ui.lcd()->drawBox(x - 1, y - TOP, 130, TOP);
+	ui.lcd()->drawBox(x - 1, y, 130, TOP);
 
-	/*ui.setWhiteColor();
-	ui.lcd()->drawVLine(288, 160, 80);*/
+	uint16_t vuRead = static_cast<int>((peak / 15000) * 130);
+	if (vuRead > 130) vuRead = 130;
+	if (vuRead < 0) vuRead = 0;
+
+	/*if (vuRead > vu) {
+		vu = vuRead;
+	}*/
+
+	vu = vuRead;
+	
+	ui.lcd()->drawBox(x - 1, y - 5, vu, 4);
+
+	//if (vu > 0) vu -= 5;
 
 	ui.setWhiteColor();
 	for (int band = 0; band < NUM_BANDS; band++) {
 		// Scale the bars for the display
-		int barHeight = bandValues[band];// / ui.map(rx.getVolume(), 0, 63, 1000, 2000);
+		int barHeight = bandValues[band];
 		if (barHeight > TOP) barHeight = TOP;
 
-		// Small amount of averaging between frames
-		//barHeight = ((oldBarHeights[band] * 1) + barHeight) / 2;
-
-		// Move peak up
-		//if (barHeight > peak[band]) {
-		//	peak[band] = min(TOP, barHeight);
-		//}
-
-		//ui.lcd()->drawPixel(395 - band, 240 - barHeight);
 		if (band > 0) {
-			ui.lcd()->drawLine(x + band - 1, y - oldBarHeights[band - 1], x + band, y - barHeight);
+			ui.lcd()->drawLine(x + band - 1, (y + TOP) - oldBarHeights[band - 1], x + band, (y + TOP) - barHeight);
 		}
-		// Draw the bars		
-		//ui.lcd()->drawVLine(395 - band, 240 - barHeight, barHeight);
-		//ui.lcd()->drawBox(390 - (band), 240 - barHeight, 1, barHeight);
-		//ui.lcd()->drawFrame(390 - (band * 6), 240 - TOP, 5, TOP);
-
-		//ui.lcd()->drawBox(390 - (band), 240 - peak[band] - 2, 1, 2);
 
 		oldBarHeights[band] = barHeight;
 	}
 
-	//EVERY_N_MILLISECONDS(60) {
-	//for (byte band = 0; band < NUM_BANDS - 1; band++)
-	//	if (peak[band] > 0) peak[band] -= 1;
-	//}
+	for (int row = NUM_WATERFALL_ROWS - 1; row > 0; --row) {
+		for (int col = 0; col < NUM_BANDS; ++col) {
+			waterfallData[row][col] = waterfallData[row - 1][col];
+		}
+	}
+
+	ui.setBlackColor();
+	ui.lcd()->drawBox(x - 1, y + TOP + 1, 130, NUM_WATERFALL_ROWS);
+	ui.setWhiteColor();
+
+	for (int row = 0; row < NUM_WATERFALL_ROWS; ++row) {
+		for (int col = 0; col < NUM_BANDS; ++col) {
+			int intensity = waterfallData[row][col];
+			uint8_t color = intensityToColor(intensity);
+
+			if (color == 1) {				
+				ui.lcd()->drawPixel(x + col, y + (TOP + 1) + row);
+			}			
+		}
+	}
+
 }
 
 /**
@@ -2037,7 +2052,10 @@ void loop() {
 		background_timer = millis();
 		showStatus();
 		drawMainVFO();
-		drawSpectrum(265, 175);
+
+		if (!isMenuMode()) {
+			drawSpectrum(265, 120);
+		}
 
 		drawMenu();
 		if (infoShow) {
