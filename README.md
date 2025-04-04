@@ -19,6 +19,7 @@ It harnesses the capabilities of the SI4732 module to deliver high-quality FM ra
 <img src="img/img_4.jpg" alt="Radio" width="560" />
 <img src="img/img_5.jpg" alt="Radio" width="560" />
 <img src="img/img_6.jpg" alt="Radio" width="560" />
+<img src="img/img_7.jpg" alt="Radio" width="560" />
 
 ## Hardware Components
 

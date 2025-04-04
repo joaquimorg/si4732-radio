@@ -25,7 +25,7 @@ SI4735 rx;
 #define DEFAULT_VOLUME          35  // change it for your favorite sound volume
 #define RDS_CHECK_TIME         250  // Increased from 90
 
-#define BACKGROUND_REFRESH_TIME 100    // Background screen refresh time. Covers the situation where there are no other events causing a refresh
+#define BACKGROUND_REFRESH_TIME 50    // Background screen refresh time. Covers the situation where there are no other events causing a refresh
 
 // SI4732/5 patch
 const uint16_t size_content = sizeof ssb_patch_content; // see patch_init.h
@@ -604,7 +604,9 @@ void disableCommands()
 }
 
 void drawMainVFO() {
-	ui.clearMain();
+	//ui.clearMain();
+	ui.setWhiteColor();
+    ui.lcd()->drawBox(0, 25, W, 155);
 
 	ui.drawFrequencyBig(currentFrequency, currentBFO, band[bandIdx].bandType, currentMode, 270, 105);
 
@@ -650,17 +652,17 @@ void drawMainVFO() {
 	ui.drawRSSI(rssi, getStrength(), snr, 5, 120);
 
 	//ui.setFont(Font::FONT_18_TF);
-	if (isCW && band[bandIdx].bandType != FM_BAND_TYPE) {		
+	if (isCW && band[bandIdx].bandType != FM_BAND_TYPE) {
 		ui.setFont(Font::FONT_18_TF);
 		ui.drawString(TextAlign::LEFT, 10, 0, 84, true, true, false, "CW");
 		ui.drawStringf(TextAlign::LEFT, 10, 0, 104, true, true, false, "%d", static_cast<int>(mFreq));
-		ui.drawStringf(TextAlign::LEFT, 50, 0, 104, true, true, false, "%d", cwDurationTime);	
-	}	
+		ui.drawStringf(TextAlign::LEFT, 50, 0, 104, true, true, false, "%d", cwDurationTime);
+	}
 	//ui.setFont(Font::FONT_18_TF);
 	//ui.drawStringf(TextAlign::LEFT, 10, 0, 104, true, true, false, "%d - %d", static_cast<int>(mFreq), static_cast<int>(mMag));
 
 	ui.setBlackColor();
-	ui.lcd()->drawBox(0, 180, 400, 60);
+	ui.lcd()->drawBox(0, 180, W, 60);
 
 	if (band[bandIdx].bandType == FM_BAND_TYPE) {
 		if (rx.getCurrentPilot()) {
@@ -1620,7 +1622,10 @@ void doAvc(int16_t v) {
 
 // -----------------------------------------------------------------------------------
 
-void setup() {	
+void taskRadio(void* parameter);
+void taskUI(void* parameter);
+
+void setup() {
 
 	encoder.setBoundaries(-1, 1, false);
 	encoder.begin();
@@ -1692,7 +1697,27 @@ void setup() {
 	useBand();
 
 	sampling_period_us = round(1000000 * (1.0 / SAMPLING_FREQ));
-	//hal_fft_start();
+
+	// Task for UI operation
+	xTaskCreate(
+		taskUI,    // Function that should be called
+		"UI Task",   // Name of the task (for debugging)
+		5000,            // Stack size (bytes)
+		NULL,            // Parameter to pass
+		1,               // Task priority
+		NULL             // Task handle);
+	);
+
+	// Set Tasks
+	// Task for Radio operation
+	xTaskCreate(
+		taskRadio,    // Function that should be called
+		"Radio Task",   // Name of the task (for debugging)
+		5000,            // Stack size (bytes)
+		NULL,            // Parameter to pass
+		1,               // Task priority
+		NULL             // Task handle);
+	);
 
 }
 
@@ -1990,110 +2015,115 @@ void drawMenu() {
 	}
 }
 
-void loop() {
-	// Check if the encoder has moved.
+void taskRadio(void* parameter) {
+	for (;;) {
 
-	pushButton.poll();
+		// Show RSSI status only if this condition has changed
+		if ((millis() - elapsedRSSI) > MIN_ELAPSED_RSSI_TIME)
+		{
 
-	if (encoder.encoderChanged()) {
-		encoderCount = encoder.getEncoderValue();
-		encoder.setEncoderValue(0);
+			rx.getCurrentReceivedSignalQuality();
+			snr = rx.getCurrentSNR();
+			int aux = rx.getCurrentRSSI();
+
+			//if (rssi != aux && !isMenuMode())
+			if (rssi != aux)                            // G8PTN: Based on 1.2s update, always allow S-Meter
+			{
+				rssi = aux;
+			}
+			elapsedRSSI = millis();
+		}
+
+		if ((millis() - lastRDSCheck) > RDS_CHECK_TIME) {
+			if ((currentMode == FM) and (snr >= 12)) checkRDS();
+			lastRDSCheck = millis();
+		}
+
+		// Show the current frequency only if it has changed
+		if (itIsTimeToSave)
+		{
+			if ((millis() - storeTime) > STORE_TIME)
+			{
+				saveAllReceiverInformation();
+				storeTime = millis();
+				itIsTimeToSave = false;
+			}
+		}
+
+		vTaskDelay(10 / portTICK_PERIOD_MS);
 	}
+}
 
-	if (encoderCount != 0)
-	{
-		infoShow = false;
-		doEncoderAction();
-	}
-	else
-	{
-		// G8PTN: Modified to use new button detection. Disable band menu on single push. Default to volume option
-		//if (digitalRead(ENCODER_PUSH_BUTTON) == LOW)
+void taskUI(void* parameter) {
+	for (;;) {
+
+		getAudioData();		
+
+		// Check if the encoder has moved.
+		if (encoder.encoderChanged()) {
+			encoderCount = encoder.getEncoderValue();
+			encoder.setEncoderValue(0);
+		}
+
+		if (encoderCount != 0)
+		{
+			infoShow = false;
+			doEncoderAction();
+		}
+
+		pushButton.poll();
+		
 		if (pushButton.pushed())
 		{
 			infoShow = false;
 			doButtonAction();
 		}
-	}
 
-	// Show RSSI status only if this condition has changed
-	if ((millis() - elapsedRSSI) > MIN_ELAPSED_RSSI_TIME)
-	{
-
-		rx.getCurrentReceivedSignalQuality();
-		snr = rx.getCurrentSNR();
-		int aux = rx.getCurrentRSSI();
-
-		//if (rssi != aux && !isMenuMode())
-		if (rssi != aux)                            // G8PTN: Based on 1.2s update, always allow S-Meter
+		// Disable commands control
+		if ((millis() - elapsedCommand) > ELAPSED_COMMAND)
 		{
-			rssi = aux;
-		}
-		elapsedRSSI = millis();
-	}
+			if (isSSB())
+			{
+				bfoOn = false;
+				disableCommands();
+			}
+			else if (isMenuMode()) {
+				disableCommands();
+			}
+			if (infoShow) {
+				infoShow = false;
+			}
 
-	// Disable commands control
-	if ((millis() - elapsedCommand) > ELAPSED_COMMAND)
-	{
-		if (isSSB())
+			elapsedCommand = millis();
+		}
+
+		if ((millis() - elapsedClick) > ELAPSED_CLICK)
 		{
-			bfoOn = false;
-			disableCommands();
-		}
-		else if (isMenuMode()) {
-			disableCommands();
-		}
-		if (infoShow) {
-			infoShow = false;
+			countClick = 0;
+			elapsedClick = millis();
 		}
 
-		elapsedCommand = millis();
+		// Periodically refresh the main screen
+		// This covers the case where there is nothing else triggering a refresh
+		if ((millis() - background_timer) > BACKGROUND_REFRESH_TIME) {
+			background_timer = millis();
+			showStatus();
+			drawMainVFO();
+
+			if (!isMenuMode()) {
+				drawSpectrum(265, 120);
+			}
+
+			drawMenu();
+			if (infoShow) {
+				ui.showStatusScreen("", infoMessage);
+			}
+			ui.updateDisplay();
+		}
+		//vTaskDelay(5 / portTICK_PERIOD_MS);
 	}
+}
 
-	if ((millis() - elapsedClick) > ELAPSED_CLICK)
-	{
-		countClick = 0;
-		elapsedClick = millis();
-	}
-
-	if ((millis() - lastRDSCheck) > RDS_CHECK_TIME) {
-		if ((currentMode == FM) and (snr >= 12)) checkRDS();
-		lastRDSCheck = millis();
-	}
-
-	// Show the current frequency only if it has changed
-	if (itIsTimeToSave)
-	{
-		if ((millis() - storeTime) > STORE_TIME)
-		{
-			saveAllReceiverInformation();
-			storeTime = millis();
-			itIsTimeToSave = false;
-		}
-	}
-
-	getAudioData();
-
-	// Periodically refresh the main screen
-	// This covers the case where there is nothing else triggering a refresh
-	if ((millis() - background_timer) > BACKGROUND_REFRESH_TIME) {
-		background_timer = millis();
-		showStatus();
-		drawMainVFO();
-
-		if (!isMenuMode()) {
-			drawSpectrum(265, 120);
-		}
-
-		drawMenu();
-		if (infoShow) {
-			ui.showStatusScreen("", infoMessage);
-		}
-		ui.updateDisplay();
-	}
-
-	// Add a small default delay in the main loop
-	//delay(5);
-
-
+void loop() {
+	vTaskDelay(100 / portTICK_PERIOD_MS);
 }
