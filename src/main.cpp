@@ -344,6 +344,13 @@ ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, SAMPLES, SAMPLING_FREQ
 
 /* ---------------------------------------- */
 
+bool isCW = false;
+double mFreq, mMag;
+long cwTime = 0;
+long cwDurationTime = 0;
+
+/* ---------------------------------------- */
+
 
 void doSoftMute(int8_t v);
 void doAgc(int8_t v);
@@ -642,6 +649,16 @@ void drawMainVFO() {
 	// RSSI
 	ui.drawRSSI(rssi, getStrength(), snr, 5, 120);
 
+	//ui.setFont(Font::FONT_18_TF);
+	if (isCW && band[bandIdx].bandType != FM_BAND_TYPE) {		
+		ui.setFont(Font::FONT_18_TF);
+		ui.drawString(TextAlign::LEFT, 10, 0, 84, true, true, false, "CW");
+		ui.drawStringf(TextAlign::LEFT, 10, 0, 104, true, true, false, "%d", static_cast<int>(mFreq));
+		ui.drawStringf(TextAlign::LEFT, 50, 0, 104, true, true, false, "%d", cwDurationTime);	
+	}	
+	//ui.setFont(Font::FONT_18_TF);
+	//ui.drawStringf(TextAlign::LEFT, 10, 0, 104, true, true, false, "%d - %d", static_cast<int>(mFreq), static_cast<int>(mMag));
+
 	ui.setBlackColor();
 	ui.lcd()->drawBox(0, 180, 400, 60);
 
@@ -684,13 +701,7 @@ uint8_t intensityToColor(int intensity) {
 	if (intensity == 0) {
 		color = 0;
 	}
-	else if (intensity < 5) {
-		color = 0;
-	}
-	else if (intensity < 10) {
-		color = 0;
-	}
-	else if (intensity < 12) {
+	else if (intensity < 8) {
 		color = 0;
 	}
 	else {
@@ -700,11 +711,8 @@ uint8_t intensityToColor(int intensity) {
 	return color;
 }
 
-#define TOP 20
-void drawSpectrum(int x, int y) {
 
-	float peak = 0;
-
+void getAudioData() {
 	// Reset bandValues[]
 	for (int i = 0; i < NUM_BANDS; i++) {
 		bandValues[i] = 0;
@@ -713,7 +721,7 @@ void drawSpectrum(int x, int y) {
 	newTime = micros();
 	for (int i = 0; i < SAMPLES; i++) {
 		vReal[i] = analogRead(AUDIO_INPUT);
-		vImag[i] = 0;		
+		vImag[i] = 0;
 		while (micros() - newTime < sampling_period_us) {
 		}
 		newTime += sampling_period_us;
@@ -721,10 +729,28 @@ void drawSpectrum(int x, int y) {
 
 	// Compute FFT
 	FFT.dcRemoval();
-	FFT.windowing(FFT_WIN_TYP_RECTANGLE, FFT_FORWARD); // FFT_WIN_TYP_HAMMING
+	//FFT.windowing(FFT_WIN_TYP_RECTANGLE, FFT_FORWARD); // FFT_WIN_TYP_HAMMING
 	FFT.compute(FFT_FORWARD);
 	FFT.complexToMagnitude();
 
+	// get major peak frequency and value	
+	FFT.majorPeak(&mFreq, &mMag);
+
+	if ((mFreq > 400 && mFreq < 800) && mMag > 10000) {
+		isCW = true;
+		cwTime = millis();
+	}
+	else {
+		isCW = false;
+		cwDurationTime = millis() - cwTime;
+		cwTime = millis();
+	}
+}
+
+#define TOP 20
+void drawSpectrum(int x, int y) {
+
+	peak = 0;
 	int maxMagnitude = 0;
 	for (int i = 0; i < SAMPLES / 2; i++) {
 
@@ -760,7 +786,7 @@ void drawSpectrum(int x, int y) {
 	}*/
 
 	vu = vuRead;
-	
+
 	ui.lcd()->drawBox(x - 1, y - 5, vu, 4);
 
 	//if (vu > 0) vu -= 5;
@@ -793,9 +819,9 @@ void drawSpectrum(int x, int y) {
 			int intensity = waterfallData[row][col];
 			uint8_t color = intensityToColor(intensity);
 
-			if (color == 1) {				
+			if (color == 1) {
 				ui.lcd()->drawPixel(x + col, y + (TOP + 1) + row);
-			}			
+			}
 		}
 	}
 
@@ -1594,7 +1620,7 @@ void doAvc(int16_t v) {
 
 // -----------------------------------------------------------------------------------
 
-void setup() {
+void setup() {	
 
 	encoder.setBoundaries(-1, 1, false);
 	encoder.begin();
@@ -2045,6 +2071,8 @@ void loop() {
 			itIsTimeToSave = false;
 		}
 	}
+
+	getAudioData();
 
 	// Periodically refresh the main screen
 	// This covers the case where there is nothing else triggering a refresh
