@@ -19,13 +19,13 @@ SI4735 rx;
 
 // SI473/5 and UI
 #define MIN_ELAPSED_TIME         5  // 300
-#define MIN_ELAPSED_RSSI_TIME  200  // RSSI check uses IN_ELAPSED_RSSI_TIME * 6 = 1.2s
+#define MIN_ELAPSED_RSSI_TIME  500  // RSSI check uses IN_ELAPSED_RSSI_TIME * 6 = 1.2s
 #define ELAPSED_COMMAND      10000  // time to turn off the last command controlled by encoder. Time to goes back to the VFO control // G8PTN: Increased time and corrected comment
-#define ELAPSED_CLICK         1500  // time to check the double click commands
+#define ELAPSED_CLICK         1000  // time to check the double click commands
 #define DEFAULT_VOLUME          35  // change it for your favorite sound volume
-#define RDS_CHECK_TIME         250  // Increased from 90
+#define RDS_CHECK_TIME         500  // Increased from 90
 
-#define BACKGROUND_REFRESH_TIME 50    // Background screen refresh time. Covers the situation where there are no other events causing a refresh
+#define BACKGROUND_REFRESH_TIME 100    // Background screen refresh time. Covers the situation where there are no other events causing a refresh
 
 // SI4732/5 patch
 const uint16_t size_content = sizeof ssb_patch_content; // see patch_init.h
@@ -313,8 +313,9 @@ uint8_t volume = DEFAULT_VOLUME;
 #define SEEKUP       9
 #define SEEKDOWN    10
 #define CALIBRATION 11
+#define DECODECW 	12
 
-const char* MenuStr = "Volume\nBand\nMode\nStep\nBandwidth\nMute\nAGC/ATTN\nSoftMute\nAVC\nSeek UP\nSeek DOWN\nCalibration\nExit";
+const char* MenuStr = "Volume\nBand\nMode\nStep\nBandwidth\nMute\nAGC/ATTN\nSoftMute\nAVC\nSeek UP\nSeek DOWN\nCalibration\nDecode CW\nExit";
 
 int8_t currentMenuCmd = -1;
 int8_t menuIdx = VOLUME;
@@ -322,7 +323,7 @@ int8_t menuIdx = VOLUME;
 
 /* ---------------------------------------- */
 #define SAMPLES         256          // Must be a power of 2
-#define SAMPLING_FREQ   12000        // Hz, must be 40000 or less due to ADC conversion time. Determines maximum frequency that can be analysed by the FFT Fmax=sampleF/2.
+#define SAMPLING_FREQ   8000        // Hz, must be 40000 or less due to ADC conversion time. Determines maximum frequency that can be analysed by the FFT Fmax=sampleF/2.
 #define AMPLITUDE       100          // Depending on your audio source level, you may need to alter this value. Can be used as a 'sensitivity' control.
 #define NOISE           1000         // Used as a crude noise filter, values below this are ignored
 #define NUM_BANDS       SAMPLES / 2  // To change this, you will need to change the bunch of if statements describing the mapping from bins to bands
@@ -344,10 +345,170 @@ ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, SAMPLES, SAMPLING_FREQ
 
 /* ---------------------------------------- */
 
+bool decodeCW = false; // Flag to indicate if CW decoding is enabled
 bool isCW = false;
-double mFreq, mMag;
-long cwTime = 0;
-long cwDurationTime = 0;
+// Morse code settings
+#define FREQ_MIN 500           // Minimum frequency of interest (Hz)
+#define FREQ_MAX 900           // Maximum frequency of interest (Hz)
+#define SIGNAL_THRESHOLD 10000   // Threshold for detecting a signal
+#define DOT_DURATION 80        // Typical dot duration in milliseconds
+#define DASH_DURATION 240      // Typical dash duration in milliseconds (3x dot)
+#define ELEMENT_GAP 80         // Gap between elements (dots/dashes) in ms
+#define LETTER_GAP 240         // Gap between letters in ms (3x element gap)
+#define WORD_GAP 560           // Gap between words in ms (7x element gap)
+
+// Buffer for decoded characters
+const int MAX_BUFFER = 40;
+char morseBuffer[7] = { 0 };  // Holds dots and dashes of current character
+int morseIndex = 0;
+char textBuffer[MAX_BUFFER] = { 0 };
+int textIndex = 0;
+
+// Timing variables
+unsigned long signalStart = 0;
+unsigned long signalEnd = 0;
+unsigned long silenceStart = 0;
+//bool signalDetected = false;
+bool wasSignalDetected = false;
+
+// Morse code lookup table
+const char* morseTable[] = {
+  ".-",    // A
+  "-...",  // B
+  "-.-.",  // C
+  "-..",   // D
+  ".",     // E
+  "..-.",  // F
+  "--.",   // G
+  "....",  // H
+  "..",    // I
+  ".---",  // J
+  "-.-",   // K
+  ".-..",  // L
+  "--",    // M
+  "-.",    // N
+  "---",   // O
+  ".--.",  // P
+  "--.-",  // Q
+  ".-.",   // R
+  "...",   // S
+  "-",     // T
+  "..-",   // U
+  "...-",  // V
+  ".--",   // W
+  "-..-",  // X
+  "-.--",  // Y
+  "--..",  // Z
+  "-----", // 0
+  ".----", // 1
+  "..---", // 2
+  "...--", // 3
+  "....-", // 4
+  ".....", // 5
+  "-....", // 6
+  "--...", // 7
+  "---..", // 8
+  "----."  // 9
+};
+
+char morseToChar() {
+	morseBuffer[morseIndex] = '\0'; // Null-terminate
+
+	// Check letters
+	for (int i = 0; i < 26; i++) {
+		if (strcmp(morseBuffer, morseTable[i]) == 0) {
+			return 'A' + i;
+		}
+	}
+
+	// Check numbers
+	for (int i = 0; i < 10; i++) {
+		if (strcmp(morseBuffer, morseTable[i + 26]) == 0) {
+			return '0' + i;
+		}
+	}
+
+	// Special characters
+	if (strcmp(morseBuffer, ".-.-.-") == 0) return '.';
+	if (strcmp(morseBuffer, "--..--") == 0) return ',';
+	if (strcmp(morseBuffer, "..--..") == 0) return '?';
+	if (strcmp(morseBuffer, "-..-.") == 0) return '/';
+
+	return '?'; // Unknown symbol
+}
+
+void addToTextBuffer(char c) {
+	if (textIndex < MAX_BUFFER - 1) {
+		textBuffer[textIndex++] = c;
+		textBuffer[textIndex] = '\0';
+	}
+	else {
+		// Buffer full, shift everything left
+		for (int i = 0; i < MAX_BUFFER - 2; i++) {
+			textBuffer[i] = textBuffer[i + 1];
+		}
+		textBuffer[MAX_BUFFER - 2] = c;
+		textBuffer[MAX_BUFFER - 1] = '\0';
+	}
+}
+
+void processMorseElement(unsigned long duration) {
+	if (duration < (DOT_DURATION + DASH_DURATION) / 2) {
+		// It's a dot
+		if (morseIndex < 6) {
+			morseBuffer[morseIndex++] = '.';
+			morseBuffer[morseIndex] = '\0';
+		}
+		//Serial.print(".");
+	}
+	else {
+		// It's a dash
+		if (morseIndex < 6) {
+			morseBuffer[morseIndex++] = '-';
+			morseBuffer[morseIndex] = '\0';
+		}
+		//Serial.print("-");
+	}
+	//updateDisplay();
+}
+
+void processSilence(unsigned long duration) {
+	if (duration >= LETTER_GAP && duration < WORD_GAP) {
+		// End of letter
+		if (morseIndex > 0) {
+			char decoded = morseToChar();
+			addToTextBuffer(decoded);
+			//Serial.print(" [");
+			//Serial.print(decoded);
+			//Serial.println("]");
+
+			// Reset morse buffer
+			morseIndex = 0;
+			morseBuffer[0] = '\0';
+			//updateDisplay();
+		}
+	}
+	else if (duration >= WORD_GAP) {
+		// End of word
+		if (morseIndex > 0) {
+			// Process any pending character
+			char decoded = morseToChar();
+			addToTextBuffer(decoded);
+			//Serial.print(" [");
+			//Serial.print(decoded);
+			//Serial.println("]");
+
+			// Reset morse buffer
+			morseIndex = 0;
+			morseBuffer[0] = '\0';
+		}
+
+		// Add space between words
+		addToTextBuffer(' ');
+		//Serial.println(" [SPACE]");
+		//updateDisplay();
+	}
+}
 
 /* ---------------------------------------- */
 
@@ -606,7 +767,7 @@ void disableCommands()
 void drawMainVFO() {
 	//ui.clearMain();
 	ui.setWhiteColor();
-    ui.lcd()->drawBox(0, 25, W, 155);
+	ui.lcd()->drawBox(0, 25, W, 155);
 
 	ui.drawFrequencyBig(currentFrequency, currentBFO, band[bandIdx].bandType, currentMode, 270, 105);
 
@@ -655,8 +816,8 @@ void drawMainVFO() {
 	if (isCW && band[bandIdx].bandType != FM_BAND_TYPE) {
 		ui.setFont(Font::FONT_18_TF);
 		ui.drawString(TextAlign::LEFT, 10, 0, 84, true, true, false, "CW");
-		ui.drawStringf(TextAlign::LEFT, 10, 0, 104, true, true, false, "%d", static_cast<int>(mFreq));
-		ui.drawStringf(TextAlign::LEFT, 50, 0, 104, true, true, false, "%d", cwDurationTime);
+		//ui.drawStringf(TextAlign::LEFT, 10, 0, 104, true, true, false, "%d", static_cast<int>(mFreq));
+		//ui.drawStringf(TextAlign::LEFT, 50, 0, 104, true, true, false, "%d", cwDurationTime);
 	}
 	//ui.setFont(Font::FONT_18_TF);
 	//ui.drawStringf(TextAlign::LEFT, 10, 0, 104, true, true, false, "%d - %d", static_cast<int>(mFreq), static_cast<int>(mMag));
@@ -678,21 +839,29 @@ void drawMainVFO() {
 				ui.draw_string_multi_line(rdsMsg, 45, 5, 215);
 			}
 		}
-
-		/*if (rdsTime != nullptr) {
-			ui.drawStrf(10, 180, rdsTime);
-		}*/
 	}
 	else {
-		ui.setFont(Font::FONT_B20_TF);
-		ui.drawStringf(TextAlign::CENTER, 200, 390, 220, false, false, false, band[bandIdx].bandName);
+		if (!decodeCW) {
+			ui.setFont(Font::FONT_B20_TF);
+			ui.drawStringf(TextAlign::CENTER, 200, 390, 220, false, false, false, band[bandIdx].bandName);
 
-		ui.setFont(Font::FONT_20_TF);
-		ui.draw_start(10, 195, WHITE);
-		ui.drawFrequency(band[bandIdx].minimumFreq, 30, 210);
+			ui.setFont(Font::FONT_20_TF);
+			ui.draw_start(10, 195, WHITE);
+			ui.drawFrequency(band[bandIdx].minimumFreq, 30, 210);
 
-		ui.draw_finish(10, 215, WHITE);
-		ui.drawFrequency(band[bandIdx].maximumFreq, 30, 230);
+			ui.draw_finish(10, 215, WHITE);
+			ui.drawFrequency(band[bandIdx].maximumFreq, 30, 230);
+		}
+		else {
+
+			ui.setWhiteColor();
+			ui.setFont(Font::FONT_18_TF);
+			ui.lcd()->drawStr(10, 195, "Morse");
+			ui.lcd()->drawStr(100, 195, morseBuffer);
+			ui.lcd()->drawStr(10, 215, "Decoded");
+			ui.lcd()->drawStr(10, 232, textBuffer);
+
+		}
 	}
 }
 
@@ -720,6 +889,11 @@ void getAudioData() {
 		bandValues[i] = 0;
 	}
 
+	peak = 0;
+
+	double maxPeak = 0;
+	double minPeak = 0;
+
 	newTime = micros();
 	for (int i = 0; i < SAMPLES; i++) {
 		vReal[i] = analogRead(AUDIO_INPUT);
@@ -727,32 +901,136 @@ void getAudioData() {
 		while (micros() - newTime < sampling_period_us) {
 		}
 		newTime += sampling_period_us;
+		if (maxPeak < vReal[i]) {
+			maxPeak = vReal[i];
+		}
+		if (minPeak > vReal[i]) {
+			minPeak = vReal[i];
+		}
 	}
+
+	peak = (maxPeak - minPeak) / 2;
 
 	// Compute FFT
 	FFT.dcRemoval();
-	//FFT.windowing(FFT_WIN_TYP_RECTANGLE, FFT_FORWARD); // FFT_WIN_TYP_HAMMING
+	//FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD); // FFT_WIN_TYP_HAMMING
 	FFT.compute(FFT_FORWARD);
 	FFT.complexToMagnitude();
 
+	double mFreq = 0;
+	double mMag = 0;
 	// get major peak frequency and value	
 	FFT.majorPeak(&mFreq, &mMag);
 
-	if ((mFreq > 400 && mFreq < 800) && mMag > 10000) {
+	if ((mFreq > FREQ_MIN && mFreq < FREQ_MAX) && mMag > SIGNAL_THRESHOLD) {
 		isCW = true;
-		cwTime = millis();
+		//cwTime = millis();
 	}
 	else {
 		isCW = false;
-		cwDurationTime = millis() - cwTime;
-		cwTime = millis();
+		//cwDurationTime = millis() - cwTime;
+		//cwTime = millis();
 	}
+
+	// Debug info
+	/*if (mMag > SIGNAL_THRESHOLD) {
+		Serial.print("Signal: ");
+		Serial.print(mMag);
+		Serial.print(" at ");
+		Serial.println(mFreq);
+	}*/
+
+	/*
+	// Find peak frequency in our range of interest
+	double peak = 0;
+	int peakIndex = 0;
+
+	// Only examine the frequency range we're interested in
+	int minIndex = (FREQ_MIN * SAMPLES) / SAMPLING_FREQ;
+	int maxIndex = (FREQ_MAX * SAMPLES) / SAMPLING_FREQ;
+
+	for (int i = minIndex; i <= maxIndex; i++) {
+		if (vReal[i] > peak) {
+			peak = vReal[i];
+			peakIndex = i;
+		}
+	}
+
+	// Calculate actual frequency
+	double dominantFreq = (peakIndex * SAMPLING_FREQ) / SAMPLES;
+
+	// Debug info
+	if (peak > SIGNAL_THRESHOLD) {
+	  Serial.print("Signal: ");
+	  Serial.print(peak);
+	  Serial.print(" at ");
+	  Serial.println(dominantFreq);
+	}
+
+	// true if signal is detected within our frequency range and above threshold
+	if (peak > SIGNAL_THRESHOLD && dominantFreq >= FREQ_MIN && dominantFreq <= FREQ_MAX) {
+		isCW = true;
+	}
+	else {
+		isCW = false;
+	}
+	*/
+
+	// Signal just started
+	if (isCW && !wasSignalDetected) {
+		signalStart = millis();
+
+		// If there was silence before, check if it's a gap between elements
+		if (silenceStart > 0) {
+			unsigned long silenceDuration = signalStart - silenceStart;
+			processSilence(silenceDuration);
+		}
+
+		silenceStart = 0;
+	}
+
+	// Signal just ended
+	if (!isCW && wasSignalDetected) {
+		signalEnd = millis();
+		silenceStart = signalEnd;
+
+		// Calculate the duration of the signal
+		unsigned long signalDuration = signalEnd - signalStart;
+		processMorseElement(signalDuration);
+	}
+
+	// Check for long silence (might indicate end of character or word)
+	if (!isCW && silenceStart > 0) {
+		unsigned long currentSilence = millis() - silenceStart;
+
+		// Only process once when threshold is crossed
+		static bool letterGapProcessed = false;
+		static bool wordGapProcessed = false;
+
+		if (currentSilence >= LETTER_GAP && !letterGapProcessed) {
+			processSilence(LETTER_GAP);
+			letterGapProcessed = true;
+		}
+
+		if (currentSilence >= WORD_GAP && !wordGapProcessed) {
+			processSilence(WORD_GAP);
+			wordGapProcessed = true;
+		}
+
+		// Reset flags when signal is detected again
+		if (isCW) {
+			letterGapProcessed = false;
+			wordGapProcessed = false;
+		}
+	}
+
+	wasSignalDetected = isCW;
 }
 
 #define TOP 20
 void drawSpectrum(int x, int y) {
 
-	peak = 0;
+	//peak = 0;
 	int maxMagnitude = 0;
 	for (int i = 0; i < SAMPLES / 2; i++) {
 
@@ -769,9 +1047,9 @@ void drawSpectrum(int x, int y) {
 		//bandValues[col] = map(vReal[col], NOISE, 4000, 0, 60);		
 		bandValues[col] = static_cast<int>((vReal[col] / maxMagnitude) * TOP);
 		waterfallData[0][col] = bandValues[col];
-		if (vReal[col] > 5000) {
+		/*if (vReal[col] > 5000) {
 			peak += vReal[col] - 5000;
-		}
+		}*/
 	}
 
 	// Process the FFT data into bar heights
@@ -779,7 +1057,8 @@ void drawSpectrum(int x, int y) {
 	ui.setBlackColor();
 	ui.lcd()->drawBox(x - 1, y, 130, TOP);
 
-	uint16_t vuRead = static_cast<int>((peak / 15000) * 130);
+	//uint16_t vuRead = static_cast<int>((peak / 15000) * 130);
+	uint16_t vuRead = map(peak, 2000, 5000, 0, 130);
 	if (vuRead > 130) vuRead = 130;
 	if (vuRead < 0) vuRead = 0;
 
@@ -1622,10 +1901,11 @@ void doAvc(int16_t v) {
 
 // -----------------------------------------------------------------------------------
 
-void taskRadio(void* parameter);
-void taskUI(void* parameter);
-
 void setup() {
+
+	Serial.begin(115200);
+	Serial.println("Starting...");
+	Serial.println("SI4732/5 Radio v" + String(app_ver) + " by joaquim.org");
 
 	encoder.setBoundaries(-1, 1, false);
 	encoder.begin();
@@ -1697,27 +1977,6 @@ void setup() {
 	useBand();
 
 	sampling_period_us = round(1000000 * (1.0 / SAMPLING_FREQ));
-
-	// Task for UI operation
-	xTaskCreate(
-		taskUI,    // Function that should be called
-		"UI Task",   // Name of the task (for debugging)
-		5000,            // Stack size (bytes)
-		NULL,            // Parameter to pass
-		1,               // Task priority
-		NULL             // Task handle);
-	);
-
-	// Set Tasks
-	// Task for Radio operation
-	xTaskCreate(
-		taskRadio,    // Function that should be called
-		"Radio Task",   // Name of the task (for debugging)
-		5000,            // Stack size (bytes)
-		NULL,            // Parameter to pass
-		1,               // Task priority
-		NULL             // Task handle);
-	);
 
 }
 
@@ -1816,6 +2075,15 @@ void doCurrentMenuCmd() {
 		}
 		else {
 			showInfoMsg("Not available in FM mode !");
+		}
+		break;
+
+	case DECODECW:		
+		if (isSSB()) {
+			decodeCW = !decodeCW;
+		}
+		else {
+			showInfoMsg("Only available in SSB mode !");
 		}
 		break;
 
@@ -2012,118 +2280,106 @@ void drawMenu() {
 			ui.drawStringf(TextAlign::CENTER, 206, 382, 100, true, false, false, "%2.2d", currentAVC);
 
 		}
-	}
-}
 
-void taskRadio(void* parameter) {
-	for (;;) {
-
-		// Show RSSI status only if this condition has changed
-		if ((millis() - elapsedRSSI) > MIN_ELAPSED_RSSI_TIME)
-		{
-
-			rx.getCurrentReceivedSignalQuality();
-			snr = rx.getCurrentSNR();
-			int aux = rx.getCurrentRSSI();
-
-			//if (rssi != aux && !isMenuMode())
-			if (rssi != aux)                            // G8PTN: Based on 1.2s update, always allow S-Meter
-			{
-				rssi = aux;
-			}
-			elapsedRSSI = millis();
-		}
-
-		if ((millis() - lastRDSCheck) > RDS_CHECK_TIME) {
-			if ((currentMode == FM) and (snr >= 12)) checkRDS();
-			lastRDSCheck = millis();
-		}
-
-		// Show the current frequency only if it has changed
-		if (itIsTimeToSave)
-		{
-			if ((millis() - storeTime) > STORE_TIME)
-			{
-				saveAllReceiverInformation();
-				storeTime = millis();
-				itIsTimeToSave = false;
-			}
-		}
-
-		vTaskDelay(10 / portTICK_PERIOD_MS);
-	}
-}
-
-void taskUI(void* parameter) {
-	for (;;) {
-
-		getAudioData();		
-
-		// Check if the encoder has moved.
-		if (encoder.encoderChanged()) {
-			encoderCount = encoder.getEncoderValue();
-			encoder.setEncoderValue(0);
-		}
-
-		if (encoderCount != 0)
-		{
-			infoShow = false;
-			doEncoderAction();
-		}
-
-		pushButton.poll();
-		
-		if (pushButton.pushed())
-		{
-			infoShow = false;
-			doButtonAction();
-		}
-
-		// Disable commands control
-		if ((millis() - elapsedCommand) > ELAPSED_COMMAND)
-		{
-			if (isSSB())
-			{
-				bfoOn = false;
-				disableCommands();
-			}
-			else if (isMenuMode()) {
-				disableCommands();
-			}
-			if (infoShow) {
-				infoShow = false;
-			}
-
-			elapsedCommand = millis();
-		}
-
-		if ((millis() - elapsedClick) > ELAPSED_CLICK)
-		{
-			countClick = 0;
-			elapsedClick = millis();
-		}
-
-		// Periodically refresh the main screen
-		// This covers the case where there is nothing else triggering a refresh
-		if ((millis() - background_timer) > BACKGROUND_REFRESH_TIME) {
-			background_timer = millis();
-			showStatus();
-			drawMainVFO();
-
-			if (!isMenuMode()) {
-				drawSpectrum(265, 120);
-			}
-
-			drawMenu();
-			if (infoShow) {
-				ui.showStatusScreen("", infoMessage);
-			}
-			ui.updateDisplay();
-		}
-		//vTaskDelay(5 / portTICK_PERIOD_MS);
 	}
 }
 
 void loop() {
-	vTaskDelay(100 / portTICK_PERIOD_MS);
+	getAudioData();
+
+	// Check if the encoder has moved.
+	if (encoder.encoderChanged()) {
+		encoderCount = encoder.getEncoderValue();
+		encoder.setEncoderValue(0);
+	}
+
+	if (encoderCount != 0)
+	{
+		infoShow = false;
+		doEncoderAction();
+	}
+
+	pushButton.poll();
+
+	if (pushButton.pushed())
+	{
+		infoShow = false;
+		doButtonAction();
+	}
+
+	// Disable commands control
+	if ((millis() - elapsedCommand) > ELAPSED_COMMAND)
+	{
+		if (isSSB())
+		{
+			bfoOn = false;
+			disableCommands();
+		}
+		else if (isMenuMode()) {
+			disableCommands();
+		}
+		if (infoShow) {
+			infoShow = false;
+		}
+
+		elapsedCommand = millis();
+	}
+
+	if ((millis() - elapsedClick) > ELAPSED_CLICK)
+	{
+		countClick = 0;
+		elapsedClick = millis();
+	}
+
+
+	// Show RSSI status only if this condition has changed
+	if ((millis() - elapsedRSSI) > MIN_ELAPSED_RSSI_TIME)
+	{
+
+		rx.getCurrentReceivedSignalQuality();
+		snr = rx.getCurrentSNR();
+		int aux = rx.getCurrentRSSI();
+
+		//if (rssi != aux && !isMenuMode())
+		if (rssi != aux)                            // G8PTN: Based on 1.2s update, always allow S-Meter
+		{
+			rssi = aux;
+		}
+		elapsedRSSI = millis();
+	}
+
+	if ((millis() - lastRDSCheck) > RDS_CHECK_TIME) {
+		if ((currentMode == FM) and (snr >= 12)) checkRDS();
+		lastRDSCheck = millis();
+	}
+
+	// Show the current frequency only if it has changed
+	if (itIsTimeToSave)
+	{
+		if ((millis() - storeTime) > STORE_TIME)
+		{
+			saveAllReceiverInformation();
+			storeTime = millis();
+			itIsTimeToSave = false;
+		}
+	}
+
+	// Periodically refresh the main screen
+	// This covers the case where there is nothing else triggering a refresh
+	if ((millis() - background_timer) > BACKGROUND_REFRESH_TIME) {
+		background_timer = millis();
+		showStatus();
+		drawMainVFO();
+
+		if (!isMenuMode()) {
+			drawSpectrum(265, 120);
+		}
+
+		drawMenu();
+		if (infoShow) {
+			ui.showStatusScreen("", infoMessage);
+		}
+		ui.updateDisplay();
+	}
+
 }
