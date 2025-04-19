@@ -917,114 +917,116 @@ void getAudioData() {
 	FFT.compute(FFT_FORWARD);
 	FFT.complexToMagnitude();
 
-	double mFreq = 0;
-	double mMag = 0;
-	// get major peak frequency and value	
-	FFT.majorPeak(&mFreq, &mMag);
+	if (decodeCW) {
+		double mFreq = 0;
+		double mMag = 0;
+		// get major peak frequency and value	
+		FFT.majorPeak(&mFreq, &mMag);
 
-	if ((mFreq > FREQ_MIN && mFreq < FREQ_MAX) && mMag > SIGNAL_THRESHOLD) {
-		isCW = true;
-		//cwTime = millis();
-	}
-	else {
-		isCW = false;
-		//cwDurationTime = millis() - cwTime;
-		//cwTime = millis();
-	}
-
-	// Debug info
-	/*if (mMag > SIGNAL_THRESHOLD) {
-		Serial.print("Signal: ");
-		Serial.print(mMag);
-		Serial.print(" at ");
-		Serial.println(mFreq);
-	}*/
-
-	/*
-	// Find peak frequency in our range of interest
-	double peak = 0;
-	int peakIndex = 0;
-
-	// Only examine the frequency range we're interested in
-	int minIndex = (FREQ_MIN * SAMPLES) / SAMPLING_FREQ;
-	int maxIndex = (FREQ_MAX * SAMPLES) / SAMPLING_FREQ;
-
-	for (int i = minIndex; i <= maxIndex; i++) {
-		if (vReal[i] > peak) {
-			peak = vReal[i];
-			peakIndex = i;
+		if ((mFreq > FREQ_MIN && mFreq < FREQ_MAX) && mMag > SIGNAL_THRESHOLD) {
+			isCW = true;
+			//cwTime = millis();
 		}
-	}
-
-	// Calculate actual frequency
-	double dominantFreq = (peakIndex * SAMPLING_FREQ) / SAMPLES;
-
-	// Debug info
-	if (peak > SIGNAL_THRESHOLD) {
-	  Serial.print("Signal: ");
-	  Serial.print(peak);
-	  Serial.print(" at ");
-	  Serial.println(dominantFreq);
-	}
-
-	// true if signal is detected within our frequency range and above threshold
-	if (peak > SIGNAL_THRESHOLD && dominantFreq >= FREQ_MIN && dominantFreq <= FREQ_MAX) {
-		isCW = true;
-	}
-	else {
-		isCW = false;
-	}
-	*/
-
-	// Signal just started
-	if (isCW && !wasSignalDetected) {
-		signalStart = millis();
-
-		// If there was silence before, check if it's a gap between elements
-		if (silenceStart > 0) {
-			unsigned long silenceDuration = signalStart - silenceStart;
-			processSilence(silenceDuration);
+		else {
+			isCW = false;
+			//cwDurationTime = millis() - cwTime;
+			//cwTime = millis();
 		}
 
-		silenceStart = 0;
-	}
+		// Debug info
+		/*if (mMag > SIGNAL_THRESHOLD) {
+			Serial.print("Signal: ");
+			Serial.print(mMag);
+			Serial.print(" at ");
+			Serial.println(mFreq);
+		}*/
 
-	// Signal just ended
-	if (!isCW && wasSignalDetected) {
-		signalEnd = millis();
-		silenceStart = signalEnd;
+		/*
+		// Find peak frequency in our range of interest
+		double peak = 0;
+		int peakIndex = 0;
 
-		// Calculate the duration of the signal
-		unsigned long signalDuration = signalEnd - signalStart;
-		processMorseElement(signalDuration);
-	}
+		// Only examine the frequency range we're interested in
+		int minIndex = (FREQ_MIN * SAMPLES) / SAMPLING_FREQ;
+		int maxIndex = (FREQ_MAX * SAMPLES) / SAMPLING_FREQ;
 
-	// Check for long silence (might indicate end of character or word)
-	if (!isCW && silenceStart > 0) {
-		unsigned long currentSilence = millis() - silenceStart;
-
-		// Only process once when threshold is crossed
-		static bool letterGapProcessed = false;
-		static bool wordGapProcessed = false;
-
-		if (currentSilence >= LETTER_GAP && !letterGapProcessed) {
-			processSilence(LETTER_GAP);
-			letterGapProcessed = true;
+		for (int i = minIndex; i <= maxIndex; i++) {
+			if (vReal[i] > peak) {
+				peak = vReal[i];
+				peakIndex = i;
+			}
 		}
 
-		if (currentSilence >= WORD_GAP && !wordGapProcessed) {
-			processSilence(WORD_GAP);
-			wordGapProcessed = true;
+		// Calculate actual frequency
+		double dominantFreq = (peakIndex * SAMPLING_FREQ) / SAMPLES;
+
+		// Debug info
+		if (peak > SIGNAL_THRESHOLD) {
+		  Serial.print("Signal: ");
+		  Serial.print(peak);
+		  Serial.print(" at ");
+		  Serial.println(dominantFreq);
 		}
 
-		// Reset flags when signal is detected again
-		if (isCW) {
-			letterGapProcessed = false;
-			wordGapProcessed = false;
+		// true if signal is detected within our frequency range and above threshold
+		if (peak > SIGNAL_THRESHOLD && dominantFreq >= FREQ_MIN && dominantFreq <= FREQ_MAX) {
+			isCW = true;
 		}
+		else {
+			isCW = false;
+		}
+		*/
+
+		// Signal just started
+		if (isCW && !wasSignalDetected) {
+			signalStart = millis();
+
+			// If there was silence before, check if it's a gap between elements
+			if (silenceStart > 0) {
+				unsigned long silenceDuration = signalStart - silenceStart;
+				processSilence(silenceDuration);
+			}
+
+			silenceStart = 0;
+		}
+
+		// Signal just ended
+		if (!isCW && wasSignalDetected) {
+			signalEnd = millis();
+			silenceStart = signalEnd;
+
+			// Calculate the duration of the signal
+			unsigned long signalDuration = signalEnd - signalStart;
+			processMorseElement(signalDuration);
+		}
+
+		// Check for long silence (might indicate end of character or word)
+		if (!isCW && silenceStart > 0) {
+			unsigned long currentSilence = millis() - silenceStart;
+
+			// Only process once when threshold is crossed
+			static bool letterGapProcessed = false;
+			static bool wordGapProcessed = false;
+
+			if (currentSilence >= LETTER_GAP && !letterGapProcessed) {
+				processSilence(LETTER_GAP);
+				letterGapProcessed = true;
+			}
+
+			if (currentSilence >= WORD_GAP && !wordGapProcessed) {
+				processSilence(WORD_GAP);
+				wordGapProcessed = true;
+			}
+
+			// Reset flags when signal is detected again
+			if (isCW) {
+				letterGapProcessed = false;
+				wordGapProcessed = false;
+			}
+		}
+
+		wasSignalDetected = isCW;
 	}
-
-	wasSignalDetected = isCW;
 }
 
 #define TOP 20
@@ -2078,7 +2080,7 @@ void doCurrentMenuCmd() {
 		}
 		break;
 
-	case DECODECW:		
+	case DECODECW:
 		if (isSSB()) {
 			decodeCW = !decodeCW;
 		}
