@@ -350,11 +350,11 @@ bool isCW = false;
 // Morse code settings
 #define FREQ_MIN 500           // Minimum frequency of interest (Hz)
 #define FREQ_MAX 900           // Maximum frequency of interest (Hz)
-#define SIGNAL_THRESHOLD 10000   // Threshold for detecting a signal
-#define DOT_DURATION 80        // Typical dot duration in milliseconds
+#define SIGNAL_THRESHOLD 8000   // Threshold for detecting a signal // Original: 10000
+#define DOT_DURATION 90        // Typical dot duration in milliseconds // Original: 80
 #define DASH_DURATION 240      // Typical dash duration in milliseconds (3x dot)
 #define ELEMENT_GAP 80         // Gap between elements (dots/dashes) in ms
-#define LETTER_GAP 240         // Gap between letters in ms (3x element gap)
+#define LETTER_GAP 280         // Gap between letters in ms (3x element gap) // Original: 240
 #define WORD_GAP 560           // Gap between words in ms (7x element gap)
 
 // Buffer for decoded characters
@@ -370,6 +370,8 @@ unsigned long signalEnd = 0;
 unsigned long silenceStart = 0;
 //bool signalDetected = false;
 bool wasSignalDetected = false;
+
+String lastLoggedTextBuffer = ""; // For logging textBuffer changes
 
 // Morse code lookup table
 const char* morseTable[] = {
@@ -413,28 +415,52 @@ const char* morseTable[] = {
 
 char morseToChar() {
 	morseBuffer[morseIndex] = '\0'; // Null-terminate
+	Serial.println("morseToChar: Attempting to translate: " + String(morseBuffer));
+
+	char decoded_char = '?'; // Default to unknown
 
 	// Check letters
 	for (int i = 0; i < 26; i++) {
 		if (strcmp(morseBuffer, morseTable[i]) == 0) {
-			return 'A' + i;
+			decoded_char = 'A' + i;
+			Serial.println("morseToChar: Decoded: " + String(decoded_char));
+			return decoded_char;
 		}
 	}
 
 	// Check numbers
 	for (int i = 0; i < 10; i++) {
 		if (strcmp(morseBuffer, morseTable[i + 26]) == 0) {
-			return '0' + i;
+			decoded_char = '0' + i;
+			Serial.println("morseToChar: Decoded: " + String(decoded_char));
+			return decoded_char;
 		}
 	}
 
 	// Special characters
-	if (strcmp(morseBuffer, ".-.-.-") == 0) return '.';
-	if (strcmp(morseBuffer, "--..--") == 0) return ',';
-	if (strcmp(morseBuffer, "..--..") == 0) return '?';
-	if (strcmp(morseBuffer, "-..-.") == 0) return '/';
+	if (strcmp(morseBuffer, ".-.-.-") == 0) {
+		decoded_char = '.';
+		Serial.println("morseToChar: Decoded: " + String(decoded_char));
+		return decoded_char;
+	}
+	if (strcmp(morseBuffer, "--..--") == 0) {
+		decoded_char = ',';
+		Serial.println("morseToChar: Decoded: " + String(decoded_char));
+		return decoded_char;
+	}
+	if (strcmp(morseBuffer, "..--..") == 0) {
+		decoded_char = '?';
+		Serial.println("morseToChar: Decoded: " + String(decoded_char));
+		return decoded_char;
+	}
+	if (strcmp(morseBuffer, "-..-.") == 0) {
+		decoded_char = '/';
+		Serial.println("morseToChar: Decoded: " + String(decoded_char));
+		return decoded_char;
+	}
 
-	return '?'; // Unknown symbol
+	Serial.println("morseToChar: Decoded: " + String(decoded_char));
+	return decoded_char; // Unknown symbol
 }
 
 void addToTextBuffer(char c) {
@@ -453,12 +479,14 @@ void addToTextBuffer(char c) {
 }
 
 void processMorseElement(unsigned long duration) {
+	Serial.println("processMorseElement: Duration=" + String(duration));
 	if (duration < (DOT_DURATION + DASH_DURATION) / 2) {
 		// It's a dot
 		if (morseIndex < 6) {
 			morseBuffer[morseIndex++] = '.';
 			morseBuffer[morseIndex] = '\0';
 		}
+		Serial.println("Morse Element: DOT");
 		//Serial.print(".");
 	}
 	else {
@@ -467,15 +495,18 @@ void processMorseElement(unsigned long duration) {
 			morseBuffer[morseIndex++] = '-';
 			morseBuffer[morseIndex] = '\0';
 		}
+		Serial.println("Morse Element: DASH");
 		//Serial.print("-");
 	}
 	//updateDisplay();
 }
 
 void processSilence(unsigned long duration) {
+	Serial.println("processSilence: Duration=" + String(duration));
 	if (duration >= LETTER_GAP && duration < WORD_GAP) {
 		// End of letter
 		if (morseIndex > 0) {
+			Serial.println("End of Letter. Morse Buffer: " + String(morseBuffer));
 			char decoded = morseToChar();
 			addToTextBuffer(decoded);
 			//Serial.print(" [");
@@ -492,6 +523,7 @@ void processSilence(unsigned long duration) {
 		// End of word
 		if (morseIndex > 0) {
 			// Process any pending character
+			Serial.println("End of Word. Morse Buffer: " + String(morseBuffer));
 			char decoded = morseToChar();
 			addToTextBuffer(decoded);
 			//Serial.print(" [");
@@ -505,6 +537,7 @@ void processSilence(unsigned long duration) {
 
 		// Add space between words
 		addToTextBuffer(' ');
+		Serial.println("End of Word.");
 		//Serial.println(" [SPACE]");
 		//updateDisplay();
 	}
@@ -913,7 +946,7 @@ void getAudioData() {
 
 	// Compute FFT
 	FFT.dcRemoval();
-	//FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD); // FFT_WIN_TYP_HAMMING
+	FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD); // FFT_WIN_TYP_HAMMING
 	FFT.compute(FFT_FORWARD);
 	FFT.complexToMagnitude();
 
@@ -922,6 +955,7 @@ void getAudioData() {
 		double mMag = 0;
 		// get major peak frequency and value	
 		FFT.majorPeak(&mFreq, &mMag);
+		Serial.println("FFT Peak: Freq=" + String(mFreq) + ", Mag=" + String(mMag));
 
 		if ((mFreq > FREQ_MIN && mFreq < FREQ_MAX) && mMag > SIGNAL_THRESHOLD) {
 			isCW = true;
@@ -932,6 +966,7 @@ void getAudioData() {
 			//cwDurationTime = millis() - cwTime;
 			//cwTime = millis();
 		}
+		Serial.println("isCW: " + String(isCW));
 
 		// Debug info
 		/*if (mMag > SIGNAL_THRESHOLD) {
@@ -2083,6 +2118,7 @@ void doCurrentMenuCmd() {
 	case DECODECW:
 		if (isSSB()) {
 			decodeCW = !decodeCW;
+			Serial.println("decodeCW toggled to: " + String(decodeCW));
 		}
 		else {
 			showInfoMsg("Only available in SSB mode !");
@@ -2288,6 +2324,13 @@ void drawMenu() {
 
 void loop() {
 	getAudioData();
+
+	if (decodeCW) {
+		if (textBuffer[0] != '\0' && lastLoggedTextBuffer != String(textBuffer)) {
+			Serial.println("Decoded Text: " + String(textBuffer));
+			lastLoggedTextBuffer = String(textBuffer);
+		}
+	}
 
 	// Check if the encoder has moved.
 	if (encoder.encoderChanged()) {
