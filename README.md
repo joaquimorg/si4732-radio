@@ -22,11 +22,39 @@ It harnesses the capabilities of the SI4732 module to deliver high-quality FM ra
 <img src="./img/img_7.jpg" alt="Radio 7" width="560" />
 <img src="./img/img_8.jpg" alt="Radio 8" width="560" />
 
-### [Schematics](https://oshwlab.com/joaquimorg/si4732-radio)
+### Schematics
+<img src="./img/SCH_Schematic_1-P1.png" alt="Schematics" width="560" />
 
 ### [3D Case](https://www.tinkercad.com/things/8lZGNjQrsIt-si4732-radio?sharecode=HUZ-hwZfG91KAuRBbbe97_qAXLUEwu6S0yEopXSdGyc)
 
 ### [LS027B7DH01 Breakout board](https://github.com/ddB0515/LS027B7DH01-Breakout-board)
+
+## Flashing precompiled firmware (no build required)
+
+Precompiled binaries are available in the [firmware/](./firmware/) folder, so you don't need to build the project to try it out.
+
+### Requirements
+
+- Python 3 with [esptool](https://github.com/espressif/esptool) installed:
+
+  ```sh
+  pip install esptool
+  ```
+- An ESP32-S2 Mini (Lolin S2 Mini) connected via USB, in bootloader mode if required (hold BOOT while plugging in, if the board isn't detected).
+
+### Flash
+
+Replace `COMx` (Windows) / `/dev/ttyUSBx` or `/dev/cu.usbmodemxxxx` (Linux/macOS) with your board's serial port:
+
+```sh
+esptool.py --chip esp32s2 --port COMx --baud 921600 write_flash -z \
+  0x1000 firmware/bootloader.bin \
+  0x8000 firmware/partitions.bin \
+  0xe000 firmware/boot_app0.bin \
+  0x10000 firmware/firmware.bin
+```
+
+After flashing completes, reset the board (or unplug/replug) to start the new firmware.
 
 ## Hardware Components
 
