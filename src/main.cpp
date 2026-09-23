@@ -13,7 +13,19 @@
 
 
 UI ui;
-Switch pushButton = Switch(ROTARY_ENCODER_BUTTON_PIN);
+// Encoder push button is handled by interrupt so presses are never missed while
+// loop() is busy (audio sampling + FFT + display refresh take tens of ms).
+#define BUTTON_DEBOUNCE_MS 150
+volatile bool buttonPressed = false;
+volatile uint32_t lastButtonIrq = 0;
+
+void IRAM_ATTR buttonISR() {
+	uint32_t now = millis();
+	if (now - lastButtonIrq > BUTTON_DEBOUNCE_MS) {
+		buttonPressed = true;
+	}
+	lastButtonIrq = now;
+}
 RotaryEncoder encoder = RotaryEncoder(ROTARY_ENCODER_A_PIN, ROTARY_ENCODER_B_PIN, RE_DEFAULT_PIN, ROTARY_ENCODER_VCC_PIN);
 SI4735 rx;
 
@@ -1912,6 +1924,8 @@ void setup() {
 	encoder.setBoundaries(-1, 1, false);
 	encoder.begin();
 
+	pinMode(ROTARY_ENCODER_BUTTON_PIN, INPUT_PULLUP);
+
 	ui.lcd()->drawXBM(0, 0, welcome_width, welcome_height, welcome_bits);
 	ui.updateDisplay();
 
@@ -1937,6 +1951,8 @@ void setup() {
 	}
 
 	EEPROM.end();
+
+	attachInterrupt(digitalPinToInterrupt(ROTARY_ENCODER_BUTTON_PIN), buttonISR, FALLING);
 
 	// Check for SI4732 connected on I2C interface
 	// If the SI4732 is not detected, then halt with no further processing
@@ -2301,10 +2317,9 @@ void loop() {
 		doEncoderAction();
 	}
 
-	pushButton.poll();
-
-	if (pushButton.pushed())
+	if (buttonPressed)
 	{
+		buttonPressed = false;
 		infoShow = false;
 		doButtonAction();
 	}

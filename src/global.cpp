@@ -16,11 +16,11 @@ void IRAM_ATTR hal_extcom_toggle(void) {
 
 void hal_extcom_start() {
 
-    pinMode(GFX_DISPLAY_EXTCOMIN, OUTPUT);
+    /*pinMode(GFX_DISPLAY_EXTCOMIN, OUTPUT);
     digitalWrite(GFX_DISPLAY_EXTCOMIN, LOW);
     timer = timerBegin(1400000);
     timerAttachInterrupt(timer, &hal_extcom_toggle);
-    timerAlarm(timer, 1400000, true, 0);
+    timerAlarm(timer, 1400000, true, 0);*/
 }
 
 const char* getStrValue(const char* str, uint8_t index) {
