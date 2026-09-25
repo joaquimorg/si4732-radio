@@ -15,7 +15,7 @@
 UI ui;
 // Encoder push button is handled by interrupt so presses are never missed while
 // loop() is busy (audio sampling + FFT + display refresh take tens of ms).
-#define BUTTON_DEBOUNCE_MS 150
+#define BUTTON_DEBOUNCE_MS 250
 volatile bool buttonPressed = false;
 volatile uint32_t lastButtonIrq = 0;
 
