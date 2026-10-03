@@ -50,8 +50,6 @@ public:
         lcd()->begin();
         lcd()->setBusClock(2800000);
 
-        hal_extcom_start();
-
         lcd()->setColorIndex(WHITE);
         lcd()->clearBuffer();
     };
@@ -65,11 +63,41 @@ public:
     void clearDisplay() {
         lcd()->setColorIndex(WHITE);
         lcd()->drawBox(0, 0, W, H);
-        lcd()->sendBuffer();
+        sendFullBuffer();
     };
 
+    // Sends only the 8-line rows that changed since the last update. The SPI traffic to the display
+    // radiates harmonics into the SW bands, so an unchanged screen costs no bus activity at all.
+    // The memory LCD driver always writes full-width lines, so rows are sent with their full width.
     void updateDisplay() {
+        uint8_t* buf = lcd()->getBufferPtr();
+        uint8_t tileWidth = lcd()->getBufferTileWidth();
+        uint8_t tileHeight = lcd()->getBufferTileHeight();
+        size_t rowBytes = (size_t)tileWidth * 8;
+
+        if (!lastFrameValid) {
+            sendFullBuffer();
+            return;
+        }
+
+        int8_t runStart = -1;
+        for (uint8_t row = 0; row <= tileHeight; row++) {
+            bool changed = (row < tileHeight) && memcmp(buf + row * rowBytes, lastFrame + row * rowBytes, rowBytes) != 0;
+            if (changed && runStart < 0) {
+                runStart = row;
+            }
+            else if (!changed && runStart >= 0) {
+                lcd()->updateDisplayArea(0, runStart, tileWidth, row - runStart);
+                memcpy(lastFrame + runStart * rowBytes, buf + runStart * rowBytes, (row - runStart) * rowBytes);
+                runStart = -1;
+            }
+        }
+    };
+
+    void sendFullBuffer() {
         lcd()->sendBuffer();
+        memcpy(lastFrame, lcd()->getBufferPtr(), sizeof(lastFrame));
+        lastFrameValid = true;
     };
 
     void setFont(Font font) {
@@ -197,7 +225,7 @@ public:
             }
             lcd()->setColorIndex(BLACK);
             lcd()->drawCircle(/*x0*/ 400, /*y0*/ H / 2, /*rad*/ curr + 2, /*opt*/ U8G2_DRAW_UPPER_LEFT | U8G2_DRAW_LOWER_LEFT); // drawDisc     U8G2_DRAW_ALL
-            lcd()->sendBuffer();
+            sendFullBuffer();
         }
     };
 
@@ -378,7 +406,7 @@ public:
         }
         else {
 
-            if (currentMode == LSB || currentMode == USB) {
+            if (currentMode == LSB || currentMode == USB || currentMode == CW) {
 
                 uint32_t cFrequency  = (uint32_t(freq) * 1000) + bfo;
 
@@ -394,6 +422,57 @@ public:
                 drawStringf(TextAlign::RIGHT, 0, xend, y, true, false, false, "%2u.%03u", (freq / 1000), (freq % 1000));
             }
 
+        }
+    };
+
+    // Draws the frequency being edited digit by digit, with the selected digit in reverse video.
+    // freq is in 10 kHz units for FM and kHz for AM/SSB. editDigit is the power of ten being edited
+    // (0 = least significant) and numDigits is the number of editable digits.
+    void drawFrequencyEdit(uint32_t freq, uint8_t editDigit, uint8_t numDigits, uint8_t currentBandType, uint8_t currentMode, u8g2_uint_t xend, u8g2_uint_t y) {
+        bool isFM = (currentBandType == FM_BAND_TYPE);
+        bool isSSB = (currentMode == LSB || currentMode == USB || currentMode == CW);
+        uint8_t decimals = isFM ? 2 : 3;
+        uint8_t totalDigits = max(numDigits, (uint8_t)(decimals + 1));
+
+        // Build the string from the most significant digit, remembering where the edited digit lands
+        char text[12];
+        uint8_t len = 0;
+        int8_t editPos = -1;
+        bool leading = true;
+        uint32_t div = 1;
+        for (uint8_t i = 1; i < totalDigits; i++) div *= 10;
+
+        for (int8_t k = totalDigits - 1; k >= 0; k--) {
+            uint8_t d = (freq / div) % 10;
+            div /= 10;
+            if (d != 0 || k <= decimals || k == editDigit) leading = false;
+            if (k == editDigit) editPos = len;
+            text[len++] = leading ? ' ' : ('0' + d);
+            if (k == decimals) text[len++] = '.';
+        }
+        text[len] = '\0';
+
+        setFont(Font::FONT_56_NF);
+        u8g2_uint_t right = isSSB ? xend - 55 : xend;
+        u8g2_uint_t x = right - lcd()->getStrWidth(text);
+        u8g2_uint_t ascent = lcd()->getAscent();
+
+        char glyph[2] = { 0, 0 };
+        for (uint8_t i = 0; i < len; i++) {
+            glyph[0] = text[i];
+            u8g2_uint_t w = u8g2_GetGlyphWidth(lcd()->getU8g2(), text[i]);
+            setBlackColor();
+            if (i == editPos) {
+                lcd()->drawBox(x - 1, y - ascent - 3, w + 2, ascent + 6);
+                setWhiteColor();
+            }
+            x += lcd()->drawStr(x, y, glyph);
+        }
+
+        if (isSSB) {
+            setBlackColor();
+            setFont(Font::FONT_32_NF);
+            drawStrf(xend - 50, y - 2, "000");
         }
     };
 
@@ -602,6 +681,9 @@ public:
 
 private:
     U8G2_LS027B7DH01_400X240_F_4W_HW_SPI u8g2;
+
+    uint8_t lastFrame[W * H / 8];       // Copy of what is currently on the display
+    bool lastFrameValid = false;
 
 };
 

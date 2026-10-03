@@ -15,14 +15,21 @@
 UI ui;
 // Encoder push button is handled by interrupt so presses are never missed while
 // loop() is busy (audio sampling + FFT + display refresh take tens of ms).
+// The ISR only latches the start of a press; loop() then tracks the release to tell
+// short presses from long presses.
 #define BUTTON_DEBOUNCE_MS 250
-volatile bool buttonPressed = false;
+#define BUTTON_MIN_PRESS_MS  50   // Ignore releases seen while the contact is still bouncing
+#define BUTTON_LONG_PRESS_MS 800
+volatile bool buttonDown = false;
+volatile uint32_t buttonDownTime = 0;
 volatile uint32_t lastButtonIrq = 0;
+bool longPressHandled = false;
 
 void IRAM_ATTR buttonISR() {
 	uint32_t now = millis();
-	if (now - lastButtonIrq > BUTTON_DEBOUNCE_MS) {
-		buttonPressed = true;
+	if (!buttonDown && now - lastButtonIrq > BUTTON_DEBOUNCE_MS) {
+		buttonDown = true;
+		buttonDownTime = now;
 	}
 	lastButtonIrq = now;
 }
@@ -85,6 +92,12 @@ bool cmdMenu = false;
 bool cmdSoftMuteMaxAtt = false;
 bool cmdCal = false;
 bool cmdAvc = false;
+
+// Frequency direct edit (long press)
+bool cmdFreqEdit = false;
+uint16_t editFrequency = 0;             // FM: 10 kHz units, AM/SSB: kHz
+uint8_t editDigit = 0;                  // Power of ten being edited (0 = least significant)
+uint8_t editNumDigits = 0;              // Number of editable digits for the current band
 
 bool fmRDS = false;
 
@@ -219,7 +232,7 @@ uint16_t currentStepIdx = 1;
 
 uint8_t currentMode = FM;
 
-const char* modeStr = "FM\nLSB\nUSB\nAM\nLW";
+const char* modeStr = "FM\nLSB\nUSB\nAM\nCW";
 
 const char* getStr(const char* str, int idx) {
 	return getStrValue(str, idx);
@@ -313,10 +326,10 @@ uint8_t snr = 0;
 uint8_t volume = DEFAULT_VOLUME;
 
 // Menu Options
-#define VOLUME       0
+#define STEP         0
 #define BAND         1
 #define MODE         2
-#define STEP         3
+#define VOLUME       3
 #define BW           4
 #define MUTE         5
 #define AGC_ATT      6
@@ -326,11 +339,14 @@ uint8_t volume = DEFAULT_VOLUME;
 #define SEEKDOWN    10
 #define CALIBRATION 11
 #define DECODECW 	12
+#define SPECTRUM 	13
 
-const char* MenuStr = "Volume\nBand\nMode\nStep\nBandwidth\nMute\nAGC/ATTN\nSoftMute\nAVC\nSeek UP\nSeek DOWN\nCalibration\nDecode CW\nExit";
+const char* MenuStr = "Step\nBand\nMode\nVolume\nBandwidth\nMute\nAGC/ATTN\nSoftMute\nAVC\nSeek UP\nSeek DOWN\nCalibration\nDecode CW\nSpectrum\nExit";
+
+bool spectrumOn = true;                 // Spectrum/waterfall display. Off = no audio sampling, FFT or display traffic for it
 
 int8_t currentMenuCmd = -1;
-int8_t menuIdx = VOLUME;
+int8_t menuIdx = STEP;
 
 
 /* ---------------------------------------- */
@@ -346,14 +362,14 @@ int bandValues[NUM_BANDS] = { 0 };
 float peak = 0;
 uint16_t vu = 0;
 int oldBarHeights[NUM_BANDS] = { 0 };
-double vReal[SAMPLES];
-double vImag[SAMPLES];
+float vReal[SAMPLES];
+float vImag[SAMPLES];
 unsigned long newTime;
 
 #define NUM_WATERFALL_ROWS 35
 int waterfallData[NUM_WATERFALL_ROWS][NUM_BANDS] = { 0 };
 
-ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, SAMPLES, SAMPLING_FREQ);
+ArduinoFFT<float> FFT = ArduinoFFT<float>(vReal, vImag, SAMPLES, SAMPLING_FREQ);
 
 /* ---------------------------------------- */
 
@@ -533,6 +549,7 @@ void loadSSB();
 void doAvc(int16_t v);
 void selectMenuList(int8_t v);
 uint8_t getStrength();
+void tuneEditFrequency();
 
 
 /* ---------------------------------------- */
@@ -540,7 +557,23 @@ uint8_t getStrength();
 // SSB Mode detection
 bool isSSB()
 {
-	return currentMode > FM && currentMode < AM;    // This allows for adding CW mode as well as LSB/USB if required
+	return currentMode == LSB || currentMode == USB || currentMode == CW;   // CW uses the SSB patch
+}
+
+// Sideband passed to the SI4732: CW is received as USB
+uint8_t getSsbSideband()
+{
+	return (currentMode == CW) ? USB : currentMode;
+}
+
+// SSB audio bandwidth. Below ~2 kHz (and the CW band-pass filters) the Sideband Cutoff Filter should be 0
+void applySsbBandwidth()
+{
+	rx.setSSBAudioBandwidth(bandwidthSSB[bwIdxSSB].idx);
+	if (bandwidthSSB[bwIdxSSB].idx == 0 || bandwidthSSB[bwIdxSSB].idx == 4 || bandwidthSSB[bwIdxSSB].idx == 5)
+		rx.setSSBSidebandCutoffFilter(0);
+	else
+		rx.setSSBSidebandCutoffFilter(1);
 }
 
 
@@ -626,6 +659,7 @@ void saveAllReceiverInformation()
 	EEPROM.write(addr_offset++, SsbAvcIdx);               // Stores the current SSB AVC index value
 	EEPROM.write(addr_offset++, AmSoftMuteIdx);           // Stores the current AM SoftMute index value
 	EEPROM.write(addr_offset++, SsbSoftMuteIdx);          // Stores the current SSB SoftMute index value
+	EEPROM.write(addr_offset++, spectrumOn);              // Stores the Spectrum display on/off
 	EEPROM.commit();
 
 	addr_offset = eeprom_setp_address;
@@ -683,6 +717,7 @@ void readAllReceiverInformation()
 	SsbAvcIdx = EEPROM.read(addr_offset++);           // Reads stored SSB AVC index value
 	AmSoftMuteIdx = EEPROM.read(addr_offset++);           // Reads stored AM SoftMute index value
 	SsbSoftMuteIdx = EEPROM.read(addr_offset++);           // Reads stored SSB SoftMute index value
+	spectrumOn = EEPROM.read(addr_offset++) != 0;          // Reads stored Spectrum on/off (never written before = 0xFF = on)
 
 	addr_offset = eeprom_setp_address;
 	for (int i = 0; i <= lastBand; i++)
@@ -715,12 +750,7 @@ void readAllReceiverInformation()
 	{
 		loadSSB();
 		bwIdxSSB = (bwIdx > 5) ? 5 : bwIdx;
-		rx.setSSBAudioBandwidth(bandwidthSSB[bwIdxSSB].idx);
-		// If audio bandwidth selected is about 2 kHz or below, it is recommended to set Sideband Cutoff Filter to 0.
-		if (bandwidthSSB[bwIdxSSB].idx == 0 || bandwidthSSB[bwIdxSSB].idx == 4 || bandwidthSSB[bwIdxSSB].idx == 5)
-			rx.setSSBSidebandCutoffFilter(0);
-		else
-			rx.setSSBSidebandCutoffFilter(1);
+		applySsbBandwidth();
 		updateBFO();
 	}
 	else if (currentMode == AM)
@@ -773,7 +803,7 @@ void disableCommands()
 	countClick = 0;
 	cmdCal = false;
 	cmdAvc = false;
-
+	cmdFreqEdit = false;                 // The edited frequency is already tuned, so leaving keeps it
 }
 
 void drawMainVFO() {
@@ -781,7 +811,10 @@ void drawMainVFO() {
 	ui.setWhiteColor();
 	ui.lcd()->drawBox(0, 25, W, 155);
 
-	ui.drawFrequencyBig(currentFrequency, currentBFO, band[bandIdx].bandType, currentMode, 270, 105);
+	if (cmdFreqEdit)
+		ui.drawFrequencyEdit(editFrequency, editDigit, editNumDigits, band[bandIdx].bandType, currentMode, 270, 105);
+	else
+		ui.drawFrequencyBig(currentFrequency, currentBFO, band[bandIdx].bandType, currentMode, 270, 105);
 
 	ui.draw_ic_mode(320, 70, BLACK);
 
@@ -903,8 +936,8 @@ void getAudioData() {
 
 	peak = 0;
 
-	double maxPeak = 0;
-	double minPeak = 0;
+	float maxPeak = 0;
+	float minPeak = 0;
 
 	newTime = micros();
 	for (int i = 0; i < SAMPLES; i++) {
@@ -930,8 +963,8 @@ void getAudioData() {
 	FFT.complexToMagnitude();
 
 	if (decodeCW) {
-		double mFreq = 0;
-		double mMag = 0;
+		float mFreq = 0;
+		float mMag = 0;
 		// get major peak frequency and value	
 		FFT.majorPeak(&mFreq, &mMag);
 
@@ -1213,8 +1246,8 @@ void useBand()
 	if (band[bandIdx].bandType == FM_BAND_TYPE)
 	{
 		currentMode = FM;
-		rx.setTuneFrequencyAntennaCapacitor(0);
 		rx.setFM(band[bandIdx].minimumFreq, band[bandIdx].maximumFreq, band[bandIdx].currentFreq, tabFmStep[band[bandIdx].currentStepIdx]);
+		rx.setTuneFrequencyAntennaCapacitor(0);   // Must follow setFM(): the library encodes ANTCAP for the mode currently powered up
 		rx.setSeekFmLimits(band[bandIdx].minimumFreq, band[bandIdx].maximumFreq);
 		bfoOn = ssbLoaded = false;
 		bwIdxFM = band[bandIdx].bandwidthIdx;
@@ -1227,8 +1260,6 @@ void useBand()
 	}
 	else
 	{
-		// set the tuning capacitor for SW or MW/LW
-		rx.setTuneFrequencyAntennaCapacitor((band[bandIdx].bandType == MW_BAND_TYPE || band[bandIdx].bandType == LW_BAND_TYPE) ? 0 : 1);
 		if (ssbLoaded)
 		{
 			// Configure SI4732 for SSB
@@ -1236,14 +1267,14 @@ void useBand()
 				band[bandIdx].minimumFreq,
 				band[bandIdx].maximumFreq,
 				band[bandIdx].currentFreq,
-				0,                                                  // SI4732 step is not used for SSB! 
-				currentMode);
+				0,                                                  // SI4732 step is not used for SSB!
+				getSsbSideband());
 
 			rx.setSSBAutomaticVolumeControl(1);                   // G8PTN: Always enabled
 			//rx.setSsbSoftMuteMaxAttenuation(softMuteMaxAttIdx); // G8PTN: Commented out
 			if (band[bandIdx].bandwidthIdx > 5) bwIdxSSB = 5;   // G8PTN: Limit value
 			else bwIdxSSB = band[bandIdx].bandwidthIdx;
-			rx.setSSBAudioBandwidth(bandwidthSSB[bwIdxSSB].idx);
+			applySsbBandwidth();
 			updateBFO();                                          // G8PTN: If SSB is loaded update BFO
 		}
 		else
@@ -1260,6 +1291,9 @@ void useBand()
 			rx.setBandwidth(bandwidthAM[bwIdxAM].idx, 1);
 			//rx.setAmSoftMuteMaxAttenuation(softMuteMaxAttIdx); //Soft Mute for AM or SSB
 		}
+		// Set the tuning capacitor for SW or MW/LW. Must follow setAM()/setSSB(): coming from FM, the library
+		// would otherwise encode the value in the FM byte layout (SW would get ANTCAP 256 = ~31 pF instead of 1)
+		rx.setTuneFrequencyAntennaCapacitor((band[bandIdx].bandType == MW_BAND_TYPE || band[bandIdx].bandType == LW_BAND_TYPE) ? 0 : 1);
 		rx.setGpioCtl(1, 0, 0);   // G8PTN: Enable GPIO1 as output
 		rx.setGpio(1, 0, 0);      // G8PTN: Set GPIO1 = 1
 		rx.setSeekAmLimits(band[bandIdx].minimumFreq, band[bandIdx].maximumFreq); // Consider the range all defined current band
@@ -1351,12 +1385,7 @@ void doBandwidth(int8_t v)
 		else if (bwIdxSSB < 0)
 			bwIdxSSB = maxSsbBw;
 
-		rx.setSSBAudioBandwidth(bandwidthSSB[bwIdxSSB].idx);
-		// If audio bandwidth selected is about 2 kHz or below, it is recommended to set Sideband Cutoff Filter to 0.
-		if (bandwidthSSB[bwIdxSSB].idx == 0 || bandwidthSSB[bwIdxSSB].idx == 4 || bandwidthSSB[bwIdxSSB].idx == 5)
-			rx.setSSBSidebandCutoffFilter(0);
-		else
-			rx.setSSBSidebandCutoffFilter(1);
+		applySsbBandwidth();
 
 		band[bandIdx].bandwidthIdx = bwIdxSSB;
 	}
@@ -1515,62 +1544,55 @@ void doStep(int8_t v)
 }
 
 /**
- * Switches to the AM, LSB or USB modes
+ * Switches to the AM, LSB, USB or CW modes
  */
+const uint8_t modeCycle[] = { AM, LSB, USB, CW };
+const uint8_t modeCycleLen = sizeof(modeCycle) / sizeof(modeCycle[0]);
+int8_t bwIdxBeforeCW = -1;              // SSB bandwidth to restore when leaving CW
+
 void doMode(int8_t v)
 {
 	currentMode = band[bandIdx].bandMODE;               // G8PTN: Added to support mode per band
 
 	if (currentMode != FM)                         // Nothing to do if FM mode
 	{
-		if (v == -1) {
-			if (currentMode == AM)
-			{
-				// If you were in AM mode, it is necessary to load SSB patch (every time)
+		uint8_t pos = 0;
+		while (pos < modeCycleLen - 1 && modeCycle[pos] != currentMode) pos++;
+		pos = (v == -1) ? (pos + 1) % modeCycleLen : (pos + modeCycleLen - 1) % modeCycleLen;
+		uint8_t newMode = modeCycle[pos];
 
-				ui.drawLoading();
-				ui.updateDisplay();
+		if (currentMode == AM)
+		{
+			// If you were in AM mode, it is necessary to load SSB patch (every time)
 
-				loadSSB();
-				ssbLoaded = true;
-				currentMode = LSB;
-			}
-			else if (currentMode == LSB)
-				currentMode = USB;
-			else if (currentMode == USB)
-			{
-				currentMode = AM;
-				bfoOn = ssbLoaded = false;
+			ui.drawLoading();
+			ui.updateDisplay();
 
-				// G8PTN: When exiting SSB mode update the current frequency and BFO
-				currentFrequency = currentFrequency + (currentBFO / 1000);
-				currentBFO = 0;
-			}
+			loadSSB();
+			ssbLoaded = true;
 		}
-		else {
-			if (currentMode == AM)
-			{
-				// If you were in AM mode, it is necessary to load SSB patch (every time)
+		else if (newMode == AM)
+		{
+			bfoOn = ssbLoaded = false;
 
-				ui.drawLoading();
-				ui.updateDisplay();
-
-				loadSSB();
-				ssbLoaded = true;
-				currentMode = USB;
-			}
-			else if (currentMode == USB)
-				currentMode = LSB;
-			else if (currentMode == LSB)
-			{
-				currentMode = AM;
-				bfoOn = ssbLoaded = false;
-
-				// G8PTN: When exiting SSB mode update the current frequency and BFO
-				currentFrequency = currentFrequency + (currentBFO / 1000);
-				currentBFO = 0;
-			}
+			// G8PTN: When exiting SSB mode update the current frequency and BFO
+			currentFrequency = currentFrequency + (currentBFO / 1000);
+			currentBFO = 0;
 		}
+
+		// CW starts on the 0.5 kHz band-pass filter; the previous bandwidth comes back when leaving CW
+		if (newMode == CW)
+		{
+			bwIdxBeforeCW = band[bandIdx].bandwidthIdx;
+			band[bandIdx].bandwidthIdx = 0;
+		}
+		else if (currentMode == CW && bwIdxBeforeCW >= 0)
+		{
+			band[bandIdx].bandwidthIdx = bwIdxBeforeCW;
+			bwIdxBeforeCW = -1;
+		}
+
+		currentMode = newMode;
 
 		band[bandIdx].currentFreq = currentFrequency;
 		band[bandIdx].currentStepIdx = currentStepIdx;
@@ -1775,8 +1797,11 @@ void checkRDS()
 void updateBFO()
 {
 	// To move frequency forward, need to move the BFO backwards, so multiply by -1
+	// In CW the receiver is tuned CW_TONE_HZ below the displayed frequency (USB), so a carrier on the
+	// displayed frequency is heard as a CW_TONE_HZ beat note
 	currentCAL = band[bandIdx].bandCAL;    // Select from table
-	rx.setSSBBfo((currentBFO + currentCAL) * -1);
+	int16_t cwOffset = (currentMode == CW) ? CW_TONE_HZ : 0;
+	rx.setSSBBfo((currentBFO + currentCAL - cwOffset) * -1);
 
 }
 
@@ -1920,6 +1945,8 @@ void setup() {
 	Serial.begin(115200);
 	Serial.println("Starting...");
 	Serial.println("SI4732/5 Radio v" + String(app_ver) + " by joaquim.org");
+
+	hal_extcom_start();                    // Display VCOM inversion (started here, once FreeRTOS is running)
 
 	encoder.setBoundaries(-1, 1, false);
 	encoder.begin();
@@ -2105,6 +2132,12 @@ void doCurrentMenuCmd() {
 		}
 		break;
 
+	case SPECTRUM:
+		spectrumOn = !spectrumOn;
+		showInfoMsg(spectrumOn ? "Spectrum ON" : "Spectrum OFF");
+		resetEepromDelay();
+		break;
+
 	default:
 		break;
 	}
@@ -2112,9 +2145,69 @@ void doCurrentMenuCmd() {
 	elapsedCommand = millis();
 }
 
+/**
+ * Frequency direct edit: long press enters, encoder changes the selected digit,
+ * short press moves to the next digit, another long press applies and exits.
+ */
+void startFreqEdit() {
+	disableCommands();
+
+	// Edit in kHz for AM/SSB (BFO folded in) and in 10 kHz units for FM, as stored in band[]
+	editFrequency = isSSB() ? currentFrequency + (currentBFO / 1000) : currentFrequency;
+	if (editFrequency < band[bandIdx].minimumFreq) editFrequency = band[bandIdx].minimumFreq;
+	if (editFrequency > band[bandIdx].maximumFreq) editFrequency = band[bandIdx].maximumFreq;
+
+	// Only the digits that can change within the band limits are editable
+	editNumDigits = 0;
+	for (uint16_t f = band[bandIdx].maximumFreq; f > 0; f /= 10) editNumDigits++;
+
+	editDigit = editNumDigits - 1;      // Start on the most significant digit
+	cmdFreqEdit = true;
+}
+
+void doFreqEdit(int8_t v) {
+	int32_t delta = 1;
+	for (uint8_t i = 0; i < editDigit; i++) delta *= 10;
+
+	// Keep the edited frequency inside the band (Whole SW covers the full SW range)
+	int32_t f = (int32_t)editFrequency + (v * delta);
+	if (f < band[bandIdx].minimumFreq) f = band[bandIdx].minimumFreq;
+	if (f > band[bandIdx].maximumFreq) f = band[bandIdx].maximumFreq;
+	editFrequency = f;
+
+	tuneEditFrequency();                // Tune live while editing
+}
+
+void nextFreqEditDigit() {
+	editDigit = (editDigit == 0) ? editNumDigits - 1 : editDigit - 1;
+}
+
+void commitFreqEdit() {
+	cmdFreqEdit = false;
+}
+
+void tuneEditFrequency() {
+	if (isSSB()) {
+		currentFrequency = editFrequency;
+		currentBFO = 0;
+		rx.setFrequency(currentFrequency);
+		updateBFO();
+		currentFrequency = rx.getFrequency();
+	}
+	else {
+		rx.setFrequency(editFrequency);
+		if (currentMode == FM) cleanBfoRdsInfo();
+		currentFrequency = rx.getFrequency();
+	}
+	band[bandIdx].currentFreq = currentFrequency;
+	resetEepromDelay();
+}
+
 void doEncoderAction() {
+	if (cmdFreqEdit)
+		doFreqEdit(encoderCount);
 	// G8PTN: The manual BFO adjusment is not required with the doFrequencyTuneSSB method, but leave for debug
-	if (bfoOn & isSSB())
+	else if (bfoOn & isSSB())
 	{
 		currentBFO = (encoderCount == 1) ? (currentBFO + currentBFOStep) : (currentBFO - currentBFOStep);
 		// G8PTN: Clamp range to +/- BFOMax (as per doFrequencyTuneSSB)
@@ -2192,7 +2285,11 @@ void doEncoderAction() {
 void doButtonAction() {
 	//while (digitalRead(ENCODER_PUSH_BUTTON) == LOW) { }
 	countClick++;
-	if (cmdMenu)
+	if (cmdFreqEdit)
+	{
+		nextFreqEditDigit();
+	}
+	else if (cmdMenu)
 	{
 		currentMenuCmd = menuIdx;
 		doCurrentMenuCmd();
@@ -2210,7 +2307,7 @@ void doButtonAction() {
 		else
 		{
 			cmdMenu = !cmdMenu;
-			menuIdx = VOLUME;
+			menuIdx = STEP;
 			currentMenuCmd = menuIdx;
 			ui.setMenu(menuIdx, MenuStr, 8);
 		}
@@ -2221,6 +2318,37 @@ void doButtonAction() {
 	}
 	delay(MIN_ELAPSED_TIME);
 	elapsedCommand = millis();
+}
+
+void doLongPressAction() {
+	if (cmdFreqEdit)
+		commitFreqEdit();
+	else
+		startFreqEdit();
+	elapsedCommand = millis();
+}
+
+/**
+ * Tracks the press latched by the ISR: fires the long press while the button is still held,
+ * or the short press on release.
+ */
+void checkButton() {
+	if (!buttonDown) return;
+
+	uint32_t held = millis() - buttonDownTime;
+	if (digitalRead(ROTARY_ENCODER_BUTTON_PIN) == HIGH) {
+		if (held < BUTTON_MIN_PRESS_MS) return;
+		buttonDown = false;
+		lastButtonIrq = millis();          // Debounce the release bounce
+		infoShow = false;
+		if (!longPressHandled) doButtonAction();
+		longPressHandled = false;
+	}
+	else if (!longPressHandled && held >= BUTTON_LONG_PRESS_MS) {
+		longPressHandled = true;
+		infoShow = false;
+		doLongPressAction();
+	}
 }
 
 
@@ -2303,7 +2431,8 @@ void drawMenu() {
 }
 
 void loop() {
-	getAudioData();
+	if (spectrumOn || decodeCW)
+		getAudioData();
 
 	// Check if the encoder has moved.
 	if (encoder.encoderChanged()) {
@@ -2317,12 +2446,7 @@ void loop() {
 		doEncoderAction();
 	}
 
-	if (buttonPressed)
-	{
-		buttonPressed = false;
-		infoShow = false;
-		doButtonAction();
-	}
+	checkButton();
 
 	// Disable commands control
 	if ((millis() - elapsedCommand) > ELAPSED_COMMAND)
@@ -2332,7 +2456,7 @@ void loop() {
 			bfoOn = false;
 			disableCommands();
 		}
-		else if (isMenuMode()) {
+		else if (isMenuMode() || cmdFreqEdit) {
 			disableCommands();
 		}
 		if (infoShow) {
@@ -2388,7 +2512,7 @@ void loop() {
 		showStatus();
 		drawMainVFO();
 
-		if (!isMenuMode()) {
+		if (spectrumOn && !isMenuMode()) {
 			drawSpectrum(265, 120);
 		}
 

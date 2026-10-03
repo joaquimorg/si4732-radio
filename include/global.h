@@ -12,6 +12,9 @@
 #define LSB 1
 #define USB 2
 #define AM  3
+#define CW  4   // Received as USB with the BFO shifted by CW_TONE_HZ (see updateBFO)
+
+#define CW_TONE_HZ 600  // CW beat note. Inside the SSB 0.5 kHz (250-750 Hz) and 1 kHz (500-1500 Hz) band-pass filters
 
 
 #define GFX_DISPLAY_EXTCOMIN  4
