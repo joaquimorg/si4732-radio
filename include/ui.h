@@ -42,6 +42,39 @@ enum class Font {
 #define W 400
 #define H 240
 
+// Menu panel (right side of the main area, kept above the bottom panel)
+#define MENU_X          161
+#define MENU_Y           28
+#define MENU_W          236
+#define MENU_LINE_H      24
+#define MENU_LIST_Y     (MENU_Y + 46)
+#define MENU_MAX_LINES    5
+
+// Bottom panel: band ruler
+#define BOTTOM_Y        180
+#define RULER_X           1
+#define RULER_W         398
+#define RULER_Y         210
+#define RULER_H          14
+
+// Band plan segment, drawn on the band ruler with a fill pattern per type
+enum SegmentType : uint8_t {
+    SEG_CW,         // Solid
+    SEG_DIGI,       // Checkered
+    SEG_PHONE,      // Empty
+    SEG_OTHER       // Dotted (satellite, FM)
+};
+
+struct BandSegment {
+    uint16_t startKHz;
+    uint16_t endKHz;
+    SegmentType type;
+    const char* name;
+};
+
+// Returns the value shown at the right of a list line, or nullptr for none
+typedef const char* (*ListValueFn)(uint8_t idx);
+
 class UI {
 public:
     UI() :
@@ -377,13 +410,12 @@ public:
         setWhiteColor();
         lcd()->drawBox(0, 0, W, 24);
 
-        draw_ic24_battery75(5, 0, BLACK);
         setFont(Font::FONT_20_TF);
         //lcd()->drawStr(35, 18, "75%  8.7V");
         //lcd()->drawStr(35, 18, "joaquim.org");
 
         if(itIsTimeToSave) {
-            draw_ic24_save(270, 1, BLACK);
+            draw_ic24_save(5, 1, BLACK);
         }        
 
         draw_ic24_sound_on(300, 3, BLACK);
@@ -530,36 +562,49 @@ public:
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - */
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
+    // Draws one list line: the label on the left and, when the list has a value callback, the
+    // current value right aligned. The cursor line is drawn in reverse video.
     u8g2_uint_t drawSelectionListLine(u8sl_t* u8sl, u8g2_uint_t y, uint8_t idx, const char* s) {
-        //u8g2_uint_t yy;
-        uint8_t border_size = 0;
-        uint8_t is_invert = 0;
+        const u8g2_uint_t x0 = MENU_X + 6;
+        const u8g2_uint_t x1 = MENU_X + MENU_W - 14;      // Leaves room for the scrollbar
+        bool selected = (idx == u8sl->current_pos);
 
-        u8g2_uint_t line_height = lcd()->getAscent() - lcd()->getDescent() + 4;
-
-        /* check whether this is the current cursor line */
-        if (idx == u8sl->current_pos)
-        {
-            border_size = 2;
-            is_invert = 1;
-        }
-
-        /* get the line from the array */
         s = u8x8_GetStringLineStart(idx, s);
-
-        /* draw the line */
         if (s == NULL)
             s = "";
-        //u8g2_DrawUTF8Line(u8g2, MY_BORDER_SIZE, y, u8g2_GetDisplayWidth(u8g2) - 2 * MY_BORDER_SIZE, s, border_size, is_invert);
-        if (is_invert) {
-            setFont(Font::FONT_B20_TF);
-        }
-        else {
-            setFont(Font::FONT_20_TF);
-        }
-        drawStringf(TextAlign::LEFT, 215, 372, y, is_invert, true, false, s);
 
-        return line_height;
+        setBlackColor();
+        if (selected) {
+            lcd()->drawRBox(x0, y - 18, x1 - x0, MENU_LINE_H - 1, 4);    // Caps (14 px) centered, descenders inside
+            setWhiteColor();
+        }
+
+        // Value first, so the label can be cut to the room that is left
+        u8g2_uint_t labelEnd = x1 - 6;
+        if (listValueFn != nullptr) {
+            const char* value = listValueFn(idx);
+            if (value != nullptr) {
+                setFont(Font::FONT_18_TF);
+                u8g2_uint_t vw = lcd()->getStrWidth(value);
+                lcd()->drawStr(x1 - 6 - vw, y, value);
+                labelEnd = x1 - 6 - vw - 8;
+            }
+        }
+
+        char label[48];
+        size_t n = 0;
+        while (n < sizeof(label) - 1 && s[n] != '\0' && s[n] != '\n') {
+            label[n] = s[n];
+            n++;
+        }
+        label[n] = '\0';
+        setFont(selected ? Font::FONT_B20_TF : Font::FONT_20_TF);
+        while (n > 0 && x0 + 6 + lcd()->getStrWidth(label) > labelEnd) {
+            label[--n] = '\0';
+        }
+        lcd()->drawStr(x0 + 6, y, label);
+
+        return MENU_LINE_H;
     }
 
     void drawList(u8sl_t* u8sl, u8g2_uint_t y, const char* s) {
@@ -569,8 +614,26 @@ public:
         }
     }
 
+    // Scrollbar at the right edge of the menu panel, only when the list does not fit
+    void drawScrollBar(u8sl_t* u8sl, u8g2_uint_t y) {
+        if (u8sl->total <= u8sl->visible) return;
+
+        const u8g2_uint_t x = MENU_X + MENU_W - 11;
+        u8g2_uint_t top = y - 18;
+        u8g2_uint_t trackH = u8sl->visible * MENU_LINE_H - 1;
+        u8g2_uint_t thumbH = max((int)(trackH * u8sl->visible / u8sl->total), 8);
+        u8g2_uint_t thumbY = top + (trackH - thumbH) * u8sl->first_pos / (u8sl->total - u8sl->visible);
+
+        setBlackColor();
+        for (u8g2_uint_t yy = top; yy < top + trackH; yy += 2) {
+            lcd()->drawPixel(x + 2, yy);
+        }
+        lcd()->drawRBox(x, thumbY, 5, thumbH, 2);
+    }
+
     u8sl_t u8sl;
     const char* slines;
+    ListValueFn listValueFn = nullptr;
 
     void listNext() {
         u8sl.current_pos++;
@@ -641,14 +704,164 @@ public:
         slines = sl;
     }
 
-    void setMenu(uint8_t startPos, const char* sl, uint8_t displayLines) {
-        drawSelectionList(startPos, displayLines, sl);
+    void setMenu(uint8_t startPos, const char* sl, ListValueFn valueFn = nullptr) {
+        listValueFn = valueFn;
+        drawSelectionList(startPos, MENU_MAX_LINES, sl);
     }
 
     void drawMenu() {
         lcd()->setFontPosBaseline();
-        drawList(&u8sl, 68, slines);
+        drawList(&u8sl, MENU_LIST_Y, slines);
+        drawScrollBar(&u8sl, MENU_LIST_Y);
     }
+
+    // Height of the menu panel for the current list
+    uint8_t getMenuHeight() {
+        return u8sl.visible * MENU_LINE_H + 30;
+    }
+
+    // Menu panel frame with the title bar. When showPosition is set, the title bar also shows
+    // the cursor position in the list (e.g. "3/15").
+    void drawMenuPanel(const char* title, uint8_t h, bool showPosition) {
+        setWhiteColor();
+        lcd()->drawRBox(MENU_X - 3, MENU_Y - 3, MENU_W + 6, h + 6, 8);
+
+        setBlackColor();
+        lcd()->drawRBox(MENU_X, MENU_Y, MENU_W, 24, 8);
+
+        setWhiteColor();
+        lcd()->drawBox(MENU_X, MENU_Y + 21, MENU_W, h - 21);
+
+        setBlackColor();
+        lcd()->drawRFrame(MENU_X, MENU_Y, MENU_W, h, 8);
+        lcd()->drawRFrame(MENU_X + 2, MENU_Y, MENU_W - 4, h - 2, 8);
+
+        setWhiteColor();
+        setFont(Font::FONT_B20_TF);
+        drawString(TextAlign::CENTER, MENU_X + 1, MENU_X + MENU_W - 2, MENU_Y + 18, false, false, false, title);
+
+        if (showPosition && u8sl.total > u8sl.visible) {
+            setWhiteColor();
+            setFont(Font::FONT_18_TF);
+            drawStringf(TextAlign::RIGHT, 0, MENU_X + MENU_W - 10, MENU_Y + 17, false, false, false, "%u/%u", u8sl.current_pos + 1, u8sl.total);
+        }
+    }
+
+    // Value panel: big value with its unit and a level gauge below it. With centerZero the gauge
+    // fills from the middle (for signed values such as the calibration offset).
+    void drawValuePanel(const char* title, Font valueFont, const char* value, const char* unit,
+                        int32_t v, int32_t vMin, int32_t vMax, bool centerZero) {
+        const uint8_t h = 104;
+        drawMenuPanel(title, h, false);
+
+        setBlackColor();
+        setFont(valueFont);
+        u8g2_uint_t valueW = lcd()->getStrWidth(value);
+        setFont(Font::FONT_20_TF);
+        u8g2_uint_t unitW = (unit != nullptr && unit[0] != '\0') ? lcd()->getStrWidth(unit) + 6 : 0;
+
+        u8g2_uint_t x = MENU_X + (MENU_W - valueW - unitW) / 2;
+        setFont(valueFont);
+        lcd()->drawStr(x, MENU_Y + 70, value);
+        if (unitW > 0) {
+            setFont(Font::FONT_20_TF);
+            lcd()->drawStr(x + valueW + 6, MENU_Y + 70, unit);
+        }
+
+        if (vMax <= vMin) return;
+
+        const u8g2_uint_t gx = MENU_X + 14;
+        const u8g2_uint_t gw = MENU_W - 28;
+        const u8g2_uint_t gy = MENU_Y + 80;
+        const u8g2_uint_t gh = 9;
+
+        v = constrain(v, vMin, vMax);
+        lcd()->drawFrame(gx, gy, gw, gh);
+        u8g2_uint_t inner = gw - 4;
+        u8g2_uint_t pos = (uint32_t)(v - vMin) * inner / (vMax - vMin);
+        if (centerZero) {
+            u8g2_uint_t mid = inner / 2;
+            if (pos >= mid) lcd()->drawBox(gx + 2 + mid, gy + 2, pos - mid + 1, gh - 4);
+            else            lcd()->drawBox(gx + 2 + pos, gy + 2, mid - pos + 1, gh - 4);
+            lcd()->drawVLine(gx + gw / 2, gy - 3, gh + 6);
+        }
+        else {
+            lcd()->drawBox(gx + 2, gy + 2, pos, gh - 4);
+        }
+    }
+
+    /* - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+    // Band ruler: slide-rule style overview of the band with the band plan segments, markers for
+    // the preset frequencies and a cursor on the tuned frequency. Frequencies in Hz.
+    // The middle shows a title (band or preset name) with an optional chip (segment or mode).
+    // Drawn in white on the black bottom panel.
+    void drawBandRuler(uint32_t minHz, uint32_t maxHz, uint32_t curHz,
+                       const BandSegment* segs, uint8_t numSegs,
+                       const uint32_t* marksHz, uint16_t numMarks,
+                       const char* leftLabel, const char* rightLabel,
+                       const char* bandName, const char* segName) {
+        const u8g2_uint_t y = RULER_Y;
+        const u8g2_uint_t inner = RULER_W - 2;
+        if (maxHz <= minHz) return;
+
+        // Labels row: band edges at the sides, band name and current segment in the middle
+        setWhiteColor();
+        setFont(Font::FONT_18_TF);
+        lcd()->drawStr(RULER_X + 1, y - 4, leftLabel);
+        lcd()->drawStr(RULER_X + RULER_W - 1 - lcd()->getStrWidth(rightLabel), y - 4, rightLabel);
+
+        setFont(Font::FONT_B20_TF);
+        u8g2_uint_t nameW = lcd()->getStrWidth(bandName);
+        u8g2_uint_t chipW = 0;
+        if (segName != nullptr) {
+            setFont(Font::FONT_18_TF);
+            chipW = lcd()->getStrWidth(segName) + 10;
+        }
+        u8g2_uint_t cx = (W - nameW - (chipW ? chipW + 6 : 0)) / 2;
+        setFont(Font::FONT_B20_TF);
+        lcd()->drawStr(cx, y - 4, bandName);
+        if (chipW) {
+            u8g2_uint_t chipX = cx + nameW + 6;
+            lcd()->drawRBox(chipX, y - 20, chipW, 18, 3);       // Centered on the name caps (y - 18 .. y - 5)
+            setBlackColor();
+            setFont(Font::FONT_18_TF);
+            lcd()->drawStr(chipX + 5, y - 5, segName);
+            setWhiteColor();
+        }
+
+        // Bar with the band plan segments
+        lcd()->drawFrame(RULER_X, y, RULER_W, RULER_H);
+        for (uint8_t i = 0; i < numSegs; i++) {
+            uint32_t s = (uint32_t)segs[i].startKHz * 1000;
+            uint32_t e = (uint32_t)segs[i].endKHz * 1000;
+            if (e <= minHz || s >= maxHz) continue;
+            u8g2_uint_t x0 = rulerX(max(s, minHz), minHz, maxHz, inner);
+            u8g2_uint_t x1 = rulerX(min(e, maxHz), minHz, maxHz, inner);
+            fillSegment(x0, x1, y + 2, RULER_H - 4, segs[i].type);
+            if (s > minHz) lcd()->drawVLine(x0, y, RULER_H);
+        }
+
+        // Preset markers just above the bar
+        for (uint16_t i = 0; i < numMarks; i++) {
+            if (marksHz[i] < minHz || marksHz[i] > maxHz) continue;
+            lcd()->drawVLine(rulerX(marksHz[i], minHz, maxHz, inner), y - 3, 2);
+        }
+
+        // Scale ticks (XOR so they show on any segment pattern)
+        lcd()->setDrawColor(2);
+        for (uint8_t i = 1; i < 10; i++) {
+            lcd()->drawVLine(RULER_X + 1 + inner * i / 10, y + RULER_H - 4, 3);
+        }
+
+        // Cursor
+        uint32_t f = constrain(curHz, minHz, maxHz);
+        u8g2_uint_t px = rulerX(f, minHz, maxHz, inner);
+        lcd()->drawBox(px - 1, y + 1, 3, RULER_H - 2);
+        setWhiteColor();
+        lcd()->drawTriangle(px, y + RULER_H + 1, px - 4, y + RULER_H + 6, px + 4, y + RULER_H + 6);
+    }
+
 
     uint8_t getListPos() {
         return u8sl.current_pos;
@@ -681,6 +894,25 @@ public:
 
 private:
     U8G2_LS027B7DH01_400X240_F_4W_HW_SPI u8g2;
+
+    u8g2_uint_t rulerX(uint32_t hz, uint32_t minHz, uint32_t maxHz, u8g2_uint_t inner) {
+        return RULER_X + 1 + (uint64_t)(hz - minHz) * (inner - 1) / (maxHz - minHz);
+    }
+
+    // Fills a band plan segment with the pattern of its type
+    void fillSegment(u8g2_uint_t x0, u8g2_uint_t x1, u8g2_uint_t y, u8g2_uint_t h, SegmentType type) {
+        if (type == SEG_PHONE) return;
+        if (type == SEG_CW) {
+            lcd()->drawBox(x0, y, x1 - x0 + 1, h);
+            return;
+        }
+        for (u8g2_uint_t yy = y; yy < y + h; yy++) {
+            for (u8g2_uint_t xx = x0; xx <= x1; xx++) {
+                bool on = (type == SEG_DIGI) ? ((xx + yy) & 1) : ((xx & 1) == 0 && (yy & 1) == 0);
+                if (on) lcd()->drawPixel(xx, yy);
+            }
+        }
+    }
 
     uint8_t lastFrame[W * H / 8];       // Copy of what is currently on the display
     bool lastFrameValid = false;

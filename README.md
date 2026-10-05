@@ -11,6 +11,62 @@ It harnesses the capabilities of the SI4732 module to deliver high-quality FM ra
 [<img src="https://img.youtube.com/vi/iMb66FNOmYM/hqdefault.jpg" width="560" />](https://www.youtube.com/watch?v=iMb66FNOmYM)
 [<img src="https://img.youtube.com/vi/ZbDGKxzLqTs/hqdefault.jpg" width="560" />](https://www.youtube.com/watch?v=ZbDGKxzLqTs)
 
+## Features
+
+- FM (with RDS), LW, MW and SW up to 30 MHz in AM, LSB, USB and CW (SSB patch).
+- Large frequency display with the Hz digits in SSB/CW, S-meter, SNR and an audio spectrum/waterfall.
+- **Band ruler** at the bottom of the screen: band edges, the IARU Region 1 band plan segments (CW solid, digital checkered, SSB empty), a marker for every preset frequency and a cursor on the tuned frequency. The middle of the ruler names what is being received: the preset name and its mode (e.g. `FT8 [USB]`, `VOLMET Shannon [USB]`), or else the band and the band plan segment (e.g. `Ham 20M [SSB]`).
+- **Presets**: 768 usual frequencies and stations from 130 kHz to 30 MHz (ham digital modes, beacons, time signals, aero, marine, weather fax, HFDL, ...), stored in flash. No internet connection is needed.
+- Direct frequency entry, digit by digit.
+- CW decoder.
+
+## Using the radio
+
+Everything is controlled with the rotary encoder:
+
+| Action | Main screen | In a menu |
+| --- | --- | --- |
+| Turn | Tune with the current step | Scroll / change the value |
+| Push | Open the menu | Select / close |
+| Hold | Direct frequency entry (turn changes the digit, push moves to the next digit, hold again applies) | Direct frequency entry |
+
+Menus close by themselves after 10 seconds without activity. The main menu shows the current value of each option (`--` when the option is not available in the current mode) and reopens on the last option used.
+
+| Option | Description |
+| --- | --- |
+| Step | Tuning step |
+| Band | Band selection |
+| Presets | Usual frequencies and stations (see below) |
+| Mode | AM, LSB, USB, CW |
+| Volume | Audio volume |
+| Bandwidth | Receiver filter |
+| Mute | Audio mute |
+| AGC/ATTN | Automatic gain control or a fixed attenuation |
+| SoftMute | Soft mute maximum attenuation (AM/SSB) |
+| AVC | Automatic volume control maximum gain (AM/SSB) |
+| Seek UP / Seek DOWN | Station seek (not in SSB) |
+| Calibration | Per band frequency calibration (SSB) |
+| Decode CW | CW decoder on/off (SSB/CW) |
+| Spectrum | Audio spectrum/waterfall on/off |
+
+### Presets
+
+`Menu > Presets` lists the presets by band, then by type, then by station. Every list starts with `Back`; the type list is skipped when a band has a single type. The station list shows the frequency in kHz, and the menu opens on the band of the station being received (or the nearest preset).
+
+Selecting a station switches to the narrowest band that contains it and sets the mode, a suitable filter (AM 6 kHz, AM narrow 3 kHz, SSB 3 kHz, CW 1 kHz, CW narrow 0.5 kHz) and the exact frequency. After that everything can be changed as usual; the presets themselves are never modified.
+
+The presets are generated from local copies of these lists, kept in [tools/data/](./tools/data/), filtered to the frequencies the receiver can tune:
+
+- [OpenWebRX+ `bands-r2.json`](https://github.com/0xAF/openwebrxplus/blob/master/bands-r2.json): ham bands and the usual digital mode frequencies (FT8, FT4, WSPR, JS8, PSK31, SSTV, ...).
+- [KiwiSDR `dist.dx_community.json`](https://github.com/jks-prv/KiwiSDR/blob/master/unix_env/kiwi.config/dist.dx_community.json): community station labels, with the type names from `dist.dx_community_config.json`.
+
+To update them, replace the files in `tools/data/`, then regenerate [include/presets.h](./include/presets.h) and rebuild:
+
+```sh
+cd tools
+python gen_presets.py
+```
+
 ## Build
 
 <img src="./img/img_1.jpg" alt="Radio 1" width="560" />
@@ -55,6 +111,8 @@ esptool.py --chip esp32s2 --port COMx --baud 921600 write_flash -z \
 ```
 
 After flashing completes, reset the board (or unplug/replug) to start the new firmware.
+
+After a firmware update it is recommended to reset the stored settings: hold the encoder button pressed while powering on the radio.
 
 ## Hardware Components
 
